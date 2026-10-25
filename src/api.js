@@ -107,6 +107,10 @@ function cloudApi() {
         { onConflict: 'endpoint' });
       if (error) throw error;
     },
+    async getConfig(key) {
+      const { data } = await sb.from('app_config').select('value').eq('key', key).maybeSingle();
+      return data?.value || null;
+    },
     async removePush(endpoint) { await sb.from('push_subscriptions').delete().eq('endpoint', endpoint); },
   };
   return api;
@@ -168,7 +172,7 @@ function demoApi() {
     async resolveRequest(rid, status) { Object.assign(db.reschedule_requests.find((r) => r.id === rid) || {}, { status }); save(); },
     async addNotice(item_id, minutes, message) { db.notices.push({ id: id(), item_id, minutes, message, by: 'demo', kind: 'atraso', created_at: now() }); save(); },
     async notify() {},
-    async savePush() {}, async removePush() {},
+    async savePush() {}, async removePush() {}, async getConfig() { return null; },
   };
   return api;
 }

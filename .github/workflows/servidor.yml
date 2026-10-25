@@ -1,0 +1,102 @@
+# Instala e atualiza o servidor do RN Group no Supabase.
+# Roda sozinho a cada envio para a main e também pelo botão "Run workflow".
+# Precisa de 3 segredos no GitHub (Settings → Secrets and variables → Actions):
+#   SUPABASE_ACCESS_TOKEN, SUPABASE_PROJECT_REF, SUPABASE_DB_PASSWORD
+# Opcional (variável, não segredo): APP_URL = endereço do app na Vercel.
+# Opcional (segredos) para o Telegram: TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET
+name: Servidor (Supabase)
+
+on:
+  push:
+    branches: [main]
+    paths: ['supabase/**', '.github/workflows/servidor.yml']
+  workflow_dispatch:
+
+concurrency: servidor
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      APP_URL: ${{ vars.APP_URL }}
+    steps:
+      - name: Conferir segredos
+        id: check
+        run: |
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ] || [ -z "$REF" ] || [ -z "$SUPABASE_DB_PASSWORD" ]; then
+            echo "::warning::Cadastre SUPABASE_ACCESS_TOKEN, SUPABASE_PROJECT_REF e SUPABASE_DB_PASSWORD nos segredos do repositório."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.check.outputs.ok == 'true'
+
+      - uses: supabase/setup-cli@v1
+        if: steps.check.outputs.ok == 'true'
+        with:
+          version: 2.120.0
+
+      - name: Banco de dados
+        if: steps.check.outputs.ok == 'true'
+        run: |
+          supabase link --project-ref "$REF"
+          supabase db push --include-all
+
+      - name: Chaves do push e do agendador (só na primeira vez)
+        if: steps.check.outputs.ok == 'true'
+        run: |
+          set -euo pipefail
+          sql() { curl -fsS -X POST "https://api.supabase.com/v1/projects/$REF/database/query" \
+                    -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H "Content-Type: application/json" \
+                    --data "$(jq -n --arg q "$1" '{query:$q}')"; }
+          names=$(supabase secrets list --project-ref "$REF" -o json | jq -r '.[].name')
+          if ! grep -qx VAPID_PRIVATE_KEY <<<"$names"; then
+            keys=$(npx -y web-push@3.6.7 generate-vapid-keys --json)
+            pub=$(jq -r .publicKey <<<"$keys"); priv=$(jq -r .privateKey <<<"$keys")
+            echo "::add-mask::$priv"
+            supabase secrets set --project-ref "$REF" VAPID_PUBLIC_KEY="$pub" VAPID_PRIVATE_KEY="$priv" VAPID_SUBJECT="mailto:contato@rngroup.app"
+            sql "insert into public.app_config(key,value) values ('vapid_public_key','$pub') on conflict (key) do update set value=excluded.value" >/dev/null
+            echo "Chaves do push criadas."
+          fi
+          if ! grep -qx CRON_SECRET <<<"$names"; then
+            cron=$(openssl rand -hex 24)
+            echo "::add-mask::$cron"
+            supabase secrets set --project-ref "$REF" CRON_SECRET="$cron"
+            sql "create extension if not exists pg_cron; create extension if not exists pg_net;" >/dev/null
+            sql "select cron.unschedule('rn-group-alertas') where exists (select 1 from cron.job where jobname='rn-group-alertas')" >/dev/null
+            sql "select cron.schedule('rn-group-alertas','* * * * *', \$cron\$ select net.http_post(url := 'https://$REF.supabase.co/functions/v1/send-alerts', headers := jsonb_build_object('content-type','application/json','x-cron-secret','$cron'), body := '{}'::jsonb); \$cron\$)" >/dev/null
+            echo "Agendador de alertas criado (a cada minuto)."
+          fi
+
+      - name: Telegram (se configurado)
+        if: steps.check.outputs.ok == 'true'
+        env:
+          TG: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TGS: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
+        run: |
+          if [ -n "$TG" ]; then
+            supabase secrets set --project-ref "$REF" TELEGRAM_BOT_TOKEN="$TG" TELEGRAM_WEBHOOK_SECRET="${TGS:-}"
+            curl -fsS "https://api.telegram.org/bot$TG/setWebhook" \
+              --data-urlencode "url=https://$REF.supabase.co/functions/v1/telegram-webhook" \
+              --data-urlencode "secret_token=${TGS:-}" > /dev/null
+            echo "Telegram ligado."
+          else
+            echo "Telegram ainda não configurado (tudo bem)."
+          fi
+
+      - name: Funções (alertas, avisos, Telegram)
+        if: steps.check.outputs.ok == 'true'
+        run: supabase functions deploy --project-ref "$REF" --use-api
+
+      - name: Endereço do app no login
+        if: steps.check.outputs.ok == 'true' && env.APP_URL != ''
+        run: |
+          curl -fsS -X PATCH "https://api.supabase.com/v1/projects/$REF/config/auth" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H "Content-Type: application/json" \
+            --data "$(jq -n --arg u "$APP_URL" '{site_url:$u, uri_allow_list:($u + "/**")}')" > /dev/null
+          echo "Login configurado para $APP_URL"

@@ -33,39 +33,51 @@ Sem as variáveis do Supabase, o app abre em **modo demonstração** (dados só 
 
 ## Colocar no ar
 
-### 1. Supabase (banco, login e push)
+O servidor é instalado sozinho pelo GitHub (arquivo `.github/workflows/servidor.yml`).
+Você só cria as contas e cola três valores.
 
-1. Crie um projeto em [supabase.com](https://supabase.com) (região **South America (São Paulo)**).
-2. Em **SQL Editor**, rode o arquivo `supabase/migrations/20261025000000_init.sql`.
-   (ou, com a CLI: `npx supabase link --project-ref SEU-PROJETO` e `npx supabase db push`)
-3. Gere as chaves do push: `npx web-push generate-vapid-keys`.
-4. Publique as funções e cadastre os segredos:
-   ```bash
-   npx supabase functions deploy send-alerts notify telegram-webhook
-   npx supabase secrets set VAPID_PUBLIC_KEY=... VAPID_PRIVATE_KEY=... VAPID_SUBJECT=mailto:seu@email.com CRON_SECRET=um-segredo-longo
-   ```
-5. No **SQL Editor**, rode `supabase/setup_cron.sql` trocando `SEU-PROJETO` e `SEU-SEGREDO`.
-6. Em **Authentication → URL Configuration**, coloque o endereço do app (o da Vercel) em **Site URL**.
+### 1. Supabase (banco, login e notificações)
 
-### 2. Vercel (hospedagem)
+1. Crie uma conta em [supabase.com](https://supabase.com) e um projeto novo:
+   nome **rn-group**, região **South America (São Paulo)**. Anote a **senha do banco** que você escolher.
+2. Copie o **Project ref**: é o código do endereço do projeto (`https://supabase.com/dashboard/project/ESTE-CODIGO`).
+3. Crie um token em [supabase.com/dashboard/account/tokens](https://supabase.com/dashboard/account/tokens) (nome: `github`).
 
-1. Em [vercel.com](https://vercel.com), importe este repositório (framework: **Vite**).
-2. Cadastre as variáveis:
-   - `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` (Supabase → Project Settings → API)
-   - `VITE_VAPID_PUBLIC_KEY` (a chave pública do passo 1.3)
-   - `VITE_TELEGRAM_BOT` (deixe vazio por enquanto)
-3. Publique. Abra o endereço no celular e instale:
-   - **Android (Chrome)**: toque em **Instalar** no aviso do app.
-   - **iPhone (Safari, iOS 16.4 ou mais novo)**: **Compartilhar → Adicionar à Tela de Início**. Abra pelo ícone e ative as notificações no Perfil.
+### 2. GitHub (instala o servidor)
 
-### 3. Telegram (quando quiser ligar)
+No repositório: **Settings → Secrets and variables → Actions → New repository secret**. Crie:
+
+| Nome | Valor |
+|---|---|
+| `SUPABASE_ACCESS_TOKEN` | o token do passo 1.3 |
+| `SUPABASE_PROJECT_REF` | o código do passo 1.2 |
+| `SUPABASE_DB_PASSWORD` | a senha do banco do passo 1.1 |
+
+Depois vá em **Actions → Servidor (Supabase) → Run workflow**. Em uns 3 minutos o servidor fica pronto:
+banco, segurança, chaves do push, agendador de alertas (a cada minuto) e funções.
+
+### 3. Vercel (o app no ar)
+
+1. Em [vercel.com/new](https://vercel.com/new), entre com o GitHub e importe o **rn-group** (framework: Vite).
+2. Em **Environment Variables**, cadastre (Supabase → Project Settings → API):
+   - `VITE_SUPABASE_URL` = Project URL
+   - `VITE_SUPABASE_ANON_KEY` = chave **anon public**
+3. Clique em **Deploy** e copie o endereço do app (ex.: `https://rn-group.vercel.app`).
+4. No GitHub, em **Settings → Secrets and variables → Actions → Variables**, crie `APP_URL` com esse endereço
+   e rode o **Servidor (Supabase)** de novo (assim os links de e-mail do login abrem o app).
+
+### 4. No celular
+
+- **Android (Chrome)**: abra o endereço e toque em **Instalar**.
+- **iPhone (Safari, iOS 16.4+)**: **Compartilhar → Adicionar à Tela de Início**, abra pelo ícone.
+- Crie sua conta, vá em **Perfil → Notificação no celular → Ativar** e toque em **Testar alerta**.
+
+### Telegram (quando quiser ligar)
 
 1. No Telegram, fale com **@BotFather**, crie o robô e copie o token.
-2. `npx supabase secrets set TELEGRAM_BOT_TOKEN=... TELEGRAM_WEBHOOK_SECRET=outro-segredo`
-3. Registre o webhook:
-   `https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://SEU-PROJETO.supabase.co/functions/v1/telegram-webhook&secret_token=outro-segredo`
-4. Na Vercel, preencha `VITE_TELEGRAM_BOT` com o nome do robô (sem @) e publique de novo.
-5. No app, Perfil → Telegram → **Conectar**.
+2. No GitHub, crie os segredos `TELEGRAM_BOT_TOKEN` (o token) e `TELEGRAM_WEBHOOK_SECRET` (uma senha qualquer, só letras e números) e rode o **Servidor (Supabase)**.
+3. Na Vercel, crie `VITE_TELEGRAM_BOT` com o nome do robô (sem @) e publique de novo.
+4. No app: **Perfil → Telegram → Conectar**.
 
 ## Desenvolvimento
 
