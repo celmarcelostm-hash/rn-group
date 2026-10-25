@@ -1,0 +1,20 @@
+{
+  "name": "rn-group",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node --test tests/*.test.js",
+    "vapid": "web-push generate-vapid-keys"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.109.0"
+  },
+  "devDependencies": {
+    "vite": "6.4.5",
+    "web-push": "3.6.7"
+  }
+}
