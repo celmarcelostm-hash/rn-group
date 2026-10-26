@@ -2,7 +2,7 @@
 # Roda sozinho a cada envio para a main e também pelo botão "Run workflow".
 # Precisa de 3 segredos no GitHub (Settings → Secrets and variables → Actions):
 #   SUPABASE_ACCESS_TOKEN, SUPABASE_PROJECT_REF, SUPABASE_DB_PASSWORD
-# Opcional (variável, não segredo): APP_URL = endereço do app na Vercel.
+# Opcional (variável, não segredo): APP_URL troca o endereço do app (padrão: https://rn-group-theta.vercel.app).
 # Opcional (segredos) para o Telegram: TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET
 name: Servidor (Supabase)
 
@@ -21,7 +21,7 @@ jobs:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       REF: ${{ secrets.SUPABASE_PROJECT_REF }}
-      APP_URL: ${{ vars.APP_URL }}
+      APP_URL: ${{ vars.APP_URL || 'https://rn-group-theta.vercel.app' }}
     steps:
       - name: Conferir segredos
         id: check
