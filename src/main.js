@@ -925,11 +925,6 @@ function renderAuth(msg = '', ok = false) {
     <p class="note">Ainda não tem acesso? Peça ao administrador do seu grupo o seu usuário e a senha temporária.</p>
     ${api.mode === 'demo' ? '<p class="note">Modo demonstração: digite qualquer usuário e senha. Os dados ficam só neste aparelho.</p>' : ''}`;
   $('#aForgot').onclick = async () => {
-    const u = $('#aUser').value.trim();
-    if (u.includes('@')) {
-      try { await api.resetPassword(u); renderAuth('Enviamos um link para criar uma nova senha. Veja seu e-mail.', true); } catch (e) { renderAuth(traduz(e)); }
-      return;
-    }
     renderAuth('Peça ao administrador do seu grupo uma nova senha temporária. No próximo acesso você cria a sua.', true);
   };
   $('#authForm').onsubmit = async (e) => {
@@ -938,6 +933,38 @@ function renderAuth(msg = '', ok = false) {
     try { await api.signIn($('#aUser').value, $('#aPass').value); await startApp(); } catch (err) { renderAuth(traduz(err)); }
   };
   setTimeout(() => $('#aUser')?.focus(), 60);
+}
+
+/* contas antigas (criadas com e-mail): escolher o usuário uma única vez */
+function renderPickUser(msg = '') {
+  $('#app').hidden = true; $('.nav').hidden = true; $('#auth').hidden = false;
+  $('#auth').innerHTML = `
+    <div><div class="brand"><b>RN</b> Group</div><div class="sub">O login agora é por usuário.</div></div>
+    <form id="pickForm">
+      <h2 style="margin:0">Escolha seu usuário</h2>
+      <p class="note" style="margin:0">A partir de agora você entra com este usuário e a sua senha. Ele não pode ser mudado depois. Seu e-mail continua no cadastro, só para receber informações.</p>
+      <label class="f">Usuário<input class="inp" id="pkUser" required maxlength="30" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="Ex.: ola.adm"></label>
+      <span class="note" style="margin-top:-6px">De 3 a 30 letras minúsculas, números, ponto, hífen ou _ (sem acento e sem espaço).</span>
+      <p class="err" role="alert" id="pkErr" ${msg ? '' : 'hidden'}>${esc(msg)}</p>
+      <button class="btn" type="submit" style="padding:14px">Salvar usuário</button>
+    </form>`;
+  $('#pkUser').oninput = (e) => { e.target.value = e.target.value.toLowerCase().replace(/\s/g, ''); };
+  $('#pickForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const u = $('#pkUser').value.trim();
+    if (!usuarioValido(u)) { renderPickUser('Usuário inválido: use de 3 a 30 letras minúsculas, números, ponto, hífen ou _.'); return; }
+    $('#pickForm button[type=submit]').disabled = true;
+    try {
+      await api.adminUsers({ action: 'meu-usuario', username: u });
+      toast(`Pronto! Agora entre sempre com o usuário ${u}.`, 6000);
+      await startApp();
+    } catch (err) {
+      const c = String(err?.message || err);
+      renderPickUser(c.includes('usuario_em_uso') ? 'Este usuário já existe. Escolha outro.' : 'Não foi possível salvar. Verifique a internet e tente de novo.');
+      $('#pkUser').value = u;
+    }
+  };
+  setTimeout(() => $('#pkUser')?.focus(), 60);
 }
 
 /* primeiro acesso: completar cadastro e trocar a senha temporária */
@@ -1008,6 +1035,7 @@ async function startApp() {
   if (!S.user) { renderAuth(); return; }
   await api.afterLogin().catch(() => {});
   S.profile = (await api.loadProfile()) || { name: '', default_alerts: [240, 60, 10], brief_on: true, brief_time: '07:00' };
+  if (api.mode === 'cloud' && !S.profile.username) { renderPickUser(); return; }
   if (S.profile.needs_setup) { await renderSetup(); return; }
   $('#auth').hidden = true; $('#app').hidden = false; $('.nav').hidden = false;
   S.push = await pushStatus().catch(() => 'indisponivel');

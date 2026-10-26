@@ -1,5 +1,6 @@
 // Cadastro feito pelo administrador do grupo:
 //  - criar: cria o usuário com senha temporária e já coloca no grupo
+//  - meu-usuario: conta antiga (sem usuário) escolhe o próprio usuário uma única vez
 //  - senha: define uma nova senha temporária, ex.: 12345678 (a pessoa troca no próximo acesso)
 // O login usa "<usuario>@usuarios.rngroup.app" por baixo; a pessoa só digita o usuário.
 import { createClient } from "npm:@supabase/supabase-js@2.109.0";
@@ -13,7 +14,8 @@ const cors = {
 
 type Body =
   | { action: "criar"; group_id: string; username: string; password: string; can_pessoal?: boolean; can_empresa?: boolean; can_invite?: boolean }
-  | { action: "senha"; group_id: string; user_id: string; password: string };
+  | { action: "senha"; group_id: string; user_id: string; password: string }
+  | { action: "meu-usuario"; username: string };
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -27,6 +29,22 @@ Deno.serve(async (req) => {
 
   const body = (await req.json()) as Body;
   const db = adminClient();
+
+  if (body.action === "meu-usuario") {
+    const username = String(body.username || "").trim().toLowerCase();
+    if (!/^[a-z0-9._-]{3,30}$/.test(username)) return json({ error: "usuario_invalido" }, 400);
+    const { data: me } = await db.from("profiles").select("username").eq("id", user.id).maybeSingle();
+    if (me?.username) return json({ error: "ja_tem_usuario" }, 400);
+    const { data: taken } = await db.from("profiles").select("id").eq("username", username).maybeSingle();
+    if (taken) return json({ error: "usuario_em_uso" }, 409);
+    const { error } = await db.auth.admin.updateUserById(user.id, { email: `${username}@${DOMAIN}`, email_confirm: true });
+    if (error) {
+      const dup = /already|registered|exists/i.test(error.message);
+      return json({ error: dup ? "usuario_em_uso" : "falhou" }, dup ? 409 : 500);
+    }
+    await db.from("profiles").update({ username }).eq("id", user.id);
+    return json({ ok: true, username });
+  }
 
   // quem chama precisa ser administrador do grupo
   const { data: adm } = await db.from("group_members").select("id")

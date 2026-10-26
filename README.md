@@ -80,7 +80,8 @@ banco, segurança, chaves do push, agendador de alertas (a cada minuto) e funç�
   (mínimo de 6 caracteres, com letra maiúscula e minúscula, digitada duas vezes).
 - Depois disso, o login pede só **usuário e senha**.
 - Esqueceu a senha? O administrador toca em **Nova senha** ao lado da pessoa e ela volta para a senha temporária.
-- Contas antigas, criadas com e-mail, continuam entrando com o e-mail no campo Usuário.
+- O login é sempre por usuário. Contas antigas, criadas com e-mail, escolhem o usuário uma única vez no próximo acesso.
+- O administrador principal que esquecer a senha redefine no painel do Supabase (Authentication → Users).
 
 ### Telegram (quando quiser ligar)
 
