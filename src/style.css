@@ -198,3 +198,19 @@ select.inp{appearance:auto}
 /* tema claro fixo quando escolhido, mesmo com o celular no modo escuro */
 :root[data-theme="light"]{color-scheme:light}
 .list,.voice,.brief,.inv-card,.profile{outline:1px solid var(--line);outline-offset:-1px}
+.top-r{display:flex;align-items:center;gap:8px}
+.out{display:flex;align-items:center;gap:6px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:8px 12px;box-shadow:var(--shadow);font:inherit;font-weight:600;color:var(--red);cursor:pointer}
+.out svg{width:18px;height:18px}
+.btn.off,.btn:disabled{opacity:.45;cursor:not-allowed}
+.opt:disabled{opacity:.4;cursor:not-allowed}
+.opt.sm{padding:6px 12px;font-size:13px}
+.grp{display:flex;flex-direction:column;gap:12px;border:1px solid var(--line);border-radius:16px;padding:14px;background:var(--soft)}
+.grp-h{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.grp-h b{font-size:16px}
+.gm-list{display:flex;flex-direction:column;gap:10px}
+.gm{display:flex;flex-direction:column;gap:8px;background:var(--card);border-radius:12px;padding:10px 12px}
+.gm-n{display:flex;align-items:center;gap:10px}
+.gm-n>div{flex:1}
+.gm .t1{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gm .av{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:var(--blue-soft);color:var(--blue-ink);font-weight:800;flex:none}
+@media (max-width:380px){.out{padding:8px 10px}.theme{padding:6px 8px}}

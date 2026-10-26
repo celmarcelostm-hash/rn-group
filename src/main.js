@@ -2,6 +2,7 @@ import './style.css';
 import { api } from './api.js';
 import { parseFala } from './parser.js';
 import { nextOccurrence, RECURRENCE, recurrenceLabel } from './recurrence.js';
+import { permsFor, ALL } from './perms.js';
 import { registerSW, pushStatus, enablePush, disablePush, refreshPush, isIOS, isStandalone } from './push.js';
 
 /* ---------- utilidades ---------- */
@@ -52,7 +53,7 @@ const isoLabel = (iso) => whenLabel(toLocal(iso, false));
 /* ---------- estado ---------- */
 const S = {
   user: null, profile: null, items: [], people: {}, sel: ymd(new Date()), filter: 'todas', filter2: 'todas', view: 'hoje',
-  push: 'indisponivel', installEvt: null, loaded: false,
+  push: 'indisponivel', installEvt: null, loaded: false, groups: [], perms: { ...ALL },
 };
 const me = () => api.uid;
 const defAlerts = () => S.profile?.default_alerts || [240, 60, 10];
@@ -75,9 +76,10 @@ function normalize(raw) {
 }
 async function reload() {
   try {
-    const { items, profiles } = await api.loadAll();
+    const [{ items, profiles }, gr] = await Promise.all([api.loadAll(), api.loadGroups().catch((e) => { console.warn(e); return null; })]);
     S.items = items.map(normalize);
     for (const p of profiles) S.people[p.id] = p;
+    if (gr) { S.groups = gr.groups; for (const p of gr.profiles) S.people[p.id] = p; S.perms = permsFor(S.groups, api.uid); }
     S.loaded = true;
     render();
     openFromUrl();
@@ -107,7 +109,7 @@ const byDue = (a, b) => (a.due || '9').localeCompare(b.due || '9');
 /* ---------- render ---------- */
 function render() {
   if (!S.user) return;
-  renderBanners(); renderWeek(); renderCounts(); renderDay(); renderUndated(); renderAgenda(); renderInvites(); renderProfile(); renderBrief();
+  renderBanners(); renderWeek(); renderCounts(); renderDay(); renderUndated(); renderAgenda(); renderInvites(); renderProfile(); renderBrief(); renderPerms(); renderGroups();
 }
 function renderBanners() {
   const b = [];
@@ -215,7 +217,7 @@ function renderInvites() {
       ${requestsHTML(m)}
       ${peopleHTML(m)}
       ${incoming ? `<div class="inv-actions"><button class="btn" style="--c:var(--green)" data-rsvp="sim">Vou participar</button><button class="btn no" data-rsvp="nao">Não posso</button></div>`
-        : '<div class="inv-actions"><button class="ghost" data-open>Detalhes</button><button class="ghost" data-share>Enviar convite</button></div>'}
+        : `<div class="inv-actions"><button class="ghost" data-open>Detalhes</button>${S.perms.convite ? '<button class="ghost" data-share>Enviar convite</button>' : ''}</div>`}
     </div>`;
   };
   $('#invIn').innerHTML = inn.length ? inn.map((m) => card(m, true)).join('') : '<div class="list"><div class="empty">Nenhum convite recebido.</div></div>';
@@ -256,6 +258,104 @@ function renderProfile() {
   $('#modeNote').textContent = note; $('#modeNote2').textContent = note;
 }
 
+/* ---------- permissões e grupos ---------- */
+function renderPerms() {
+  const P = S.perms;
+  $$('[data-new="pessoal"],[data-new="empresa"]').forEach((b) => {
+    const ok = P[b.dataset.new];
+    b.disabled = !ok; b.classList.toggle('off', !ok);
+    b.lastChild.textContent = ok ? 'Criar tarefa' : 'Sem acesso';
+  });
+  const any = P.pessoal || P.empresa;
+  $('#voiceBtn').hidden = !any;
+  $$('[data-new="reuniao"]').forEach((b) => { b.hidden = !any; });
+}
+const PERMS = [['can_pessoal', 'Pessoal', 'p'], ['can_empresa', 'Empresa', 'e'], ['can_invite', 'Convites', 'y']];
+const gmName = (m) => (m.user_id === api.uid ? 'Você' : (m.user_id && S.people[m.user_id]?.name) || m.email || 'Membro');
+function renderGroups() {
+  const box = $('#groupsList'); if (!box) return;
+  if (!S.groups.length) {
+    box.innerHTML = '<p class="note" style="margin:0">Crie um grupo para a sua equipe. Como administrador, você escolhe quem pode criar tarefas em Pessoal, em Empresa e quem pode enviar convites.</p>';
+    return;
+  }
+  box.innerHTML = S.groups.map((g) => {
+    const mine = g.group_members.find((m) => m.user_id === api.uid);
+    const admin = mine?.role === 'admin';
+    const members = g.group_members.slice().sort((a, b) => (a.role === 'admin' ? -1 : 0) - (b.role === 'admin' ? -1 : 0));
+    if (!admin) {
+      const adm = members.filter((m) => m.role === 'admin').map(gmName).join(', ');
+      const can = mine ? PERMS.filter(([k]) => mine[k]).map(([, l]) => l) : [];
+      return `<div class="grp"><div class="grp-h"><b>${esc(g.name)}</b><span class="pill inv">Membro</span></div>
+        <div class="note">Administrador: ${esc(adm || '—')}</div>
+        <div class="note">Você pode: ${can.length ? esc(can.join(', ').replace('Convites', 'enviar convites')) : 'só ver e concluir o que receber'}</div></div>`;
+    }
+    const chip = (attr, on, l, c) => `<button type="button" class="opt ${c} sm" ${attr} aria-pressed="${!!on}">${l}</button>`;
+    return `<div class="grp" data-gid="${esc(g.id)}">
+      <div class="grp-h"><b>${esc(g.name)}</b><span class="pill ok">Administrador</span></div>
+      <div class="f"><span>Todos os membros podem criar ou enviar:</span><div class="chips">${PERMS.map(([k, l, c]) => chip(`data-gall="${k}"`, g[k], l, c)).join('')}</div></div>
+      <div class="gm-list">${members.map((m) => `<div class="gm" data-gmid="${esc(m.id)}">
+        <div class="gm-n"><span class="av">${esc(gmName(m)[0].toUpperCase())}</span><div style="min-width:0"><div class="t1">${esc(gmName(m))}</div><div class="note">${m.role === 'admin' ? 'Administrador · acesso total' : !m.user_id ? 'Aguardando criar a conta' : esc(m.email || '')}</div></div>
+        ${m.role === 'admin' ? '' : `<button type="button" class="chipx" data-gmrm aria-label="Remover ${esc(gmName(m))}">✕</button>`}</div>
+        ${m.role === 'admin' ? '' : `<div class="chips">${PERMS.map(([k, l, c]) => chip(`data-gperm="${k}"`, m[k], l, c)).join('')}</div>`}
+      </div>`).join('')}</div>
+      <div style="display:flex;gap:8px"><input class="inp" type="email" inputmode="email" placeholder="E-mail da pessoa" data-gmail><button type="button" class="ghost" data-gadd>Adicionar</button></div>
+      <button type="button" class="link" data-gdel style="color:var(--red);align-self:flex-start">Excluir grupo</button>
+    </div>`;
+  }).join('');
+}
+function groupSheet() {
+  const el = sheet('Criar grupo', `
+    <label class="f">Nome do grupo<input class="inp" id="gName" required maxlength="60" placeholder="Ex.: Equipe RN Group"></label>
+    <p class="note" style="margin:0">Você será o administrador. Depois é só adicionar as pessoas pelo e-mail e escolher o que cada uma pode fazer.</p>
+    <button class="btn" type="submit" style="padding:14px">Criar grupo</button>`, { form: true });
+  el.onsubmit = safe(async (e) => {
+    e.preventDefault(); const name = $('#gName').value.trim(); if (!name) return;
+    await api.createGroup(name); closeSheet(); toast('Grupo criado. Agora adicione as pessoas.'); await reload();
+  });
+  setTimeout(() => $('#gName')?.focus(), 60);
+}
+async function groupClick(t) {
+  if (t.closest('#newGroup')) { groupSheet(); return true; }
+  const host = t.closest('[data-gid]'); if (!host) return false;
+  const g = S.groups.find((x) => x.id === host.dataset.gid); if (!g) return true;
+  const all = t.closest('[data-gall]');
+  if (all) {
+    const k = all.dataset.gall, v = !g[k];
+    await api.updateGroup(g.id, { [k]: v }); await api.updateAllGroupMembers(g.id, { [k]: v });
+    toast(`${PERMS.find((x) => x[0] === k)[1]}: ${v ? 'liberado' : 'bloqueado'} para todos os membros`); await reload(); return true;
+  }
+  const row = t.closest('[data-gmid]'); const m = row && g.group_members.find((x) => x.id === row.dataset.gmid);
+  const pm = t.closest('[data-gperm]');
+  if (pm && m) { const k = pm.dataset.gperm; await api.updateGroupMember(m.id, { [k]: !m[k] }); await reload(); return true; }
+  if (t.closest('[data-gmrm]') && m) {
+    sheet('Remover do grupo?', `<p style="margin:0">${esc(gmName(m))} sai do grupo “${esc(g.name)}”.</p><div class="inv-actions"><button class="btn" id="cYes" style="--c:var(--red)">Remover</button><button class="btn no" id="cNo">Voltar</button></div>`);
+    $('#cNo').onclick = closeSheet;
+    $('#cYes').onclick = safe(async () => { await api.removeGroupMember(m.id); closeSheet(); toast('Removido do grupo'); await reload(); });
+    return true;
+  }
+  if (t.closest('[data-gadd]')) {
+    const inp = $('[data-gmail]', host); const v = inp.value.trim().toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) { toast('Digite um e-mail válido'); return true; }
+    if (g.group_members.some((x) => x.email === v)) { toast('Essa pessoa já está no grupo'); return true; }
+    const has = await api.addGroupMember(g.id, v, { can_pessoal: g.can_pessoal, can_empresa: g.can_empresa, can_invite: g.can_invite });
+    toast(has ? 'Pessoa adicionada ao grupo' : 'Adicionada. Ela entra no grupo quando criar a conta com esse e-mail.', 5000);
+    await reload(); return true;
+  }
+  if (t.closest('[data-gdel]')) {
+    sheet('Excluir grupo?', `<p style="margin:0">O grupo “${esc(g.name)}” será apagado e os membros voltam a ter acesso livre. As tarefas e reuniões não são apagadas.</p><div class="inv-actions"><button class="btn" id="cYes" style="--c:var(--red)">Excluir grupo</button><button class="btn no" id="cNo">Voltar</button></div>`);
+    $('#cNo').onclick = closeSheet;
+    $('#cYes').onclick = safe(async () => { await api.deleteGroup(g.id); closeSheet(); toast('Grupo excluído'); await reload(); });
+    return true;
+  }
+  return true;
+}
+function confirmLogout() {
+  sheet('Sair da conta?', `<p style="margin:0">${api.mode === 'demo' ? 'No modo demonstração, os dados deste aparelho serão apagados.' : 'Para voltar, é só entrar de novo com seu e-mail e senha. As notificações deste aparelho param até você entrar de novo.'}</p>
+    <div class="inv-actions"><button class="btn" id="cYes" style="--c:var(--red)">Sair</button><button class="btn no" id="cNo">Voltar</button></div>`);
+  $('#cNo').onclick = closeSheet;
+  $('#cYes').onclick = safe(async () => { if (S.push === 'ativo') await disablePush().catch(() => {}); await api.signOut(); location.reload(); });
+}
+
 /* ---------- alertas (escolha) ---------- */
 const ALERTAS = [[1440, '1 dia antes'], [240, '4 h antes'], [120, '2 h antes'], [60, '1 h antes'], [30, '30 min antes'], [10, '10 min antes'], [0, 'Na hora']];
 const alertChips = (sel) => ALERTAS.map(([v, l]) => `<button type="button" class="opt y" data-al="${v}" aria-pressed="${sel.includes(v)}">${l}</button>`).join('');
@@ -285,13 +385,25 @@ function sheet(title, inner, { form = false } = {}) {
   $('#scrim').onclick = (e) => { if (e.target.id === 'scrim') closeSheet(); };
   return $('#sheet');
 }
-const safe = (fn) => async (...a) => { try { return await fn(...a); } catch (e) { console.error(e); toast('Não foi possível salvar. Verifique a internet e tente de novo.'); } };
+const errMsg = (e) => {
+  const m = String(e?.message || e);
+  if (/sem_permissao_convite/.test(m)) return 'O administrador do grupo não liberou o envio de convites para você.';
+  if (/sem_permissao_pessoal/.test(m)) return 'O administrador do grupo não liberou criar em Pessoal para você.';
+  if (/sem_permissao_empresa/.test(m)) return 'O administrador do grupo não liberou criar em Empresa para você.';
+  if (/duplicate key|unique/i.test(m)) return 'Isso já está cadastrado.';
+  return 'Não foi possível salvar. Verifique a internet e tente de novo.';
+};
+const safe = (fn) => async (...a) => { try { return await fn(...a); } catch (e) { console.error(e); toast(errMsg(e), 5000); } };
 
 /* ---------- formulário (criar/editar) ---------- */
 function openForm(pre = {}) {
   const editing = !!pre.id;
+  const P = S.perms;
+  if (!editing && !P.pessoal && !P.empresa) { toast('O administrador do grupo ainda não liberou criar tarefas para você.', 5000); return; }
+  let cat0 = pre.cat || 'pessoal';
+  if (!editing && !P[cat0]) cat0 = cat0 === 'pessoal' ? 'empresa' : 'pessoal';
   const f = {
-    kind: pre.kind || 'tarefa', cat: pre.cat || 'pessoal', alerts: [...alertsOf(pre)],
+    kind: pre.kind || 'tarefa', cat: cat0, alerts: [...alertsOf(pre)],
     invites: editing ? pre.members.filter((m) => m.role !== 'dono').map((m) => ({ id: m.id, email: m.email || '', name: personName(m) })) : (pre.guests || []).map((n) => ({ name: n, email: '' })),
   };
   const date = pre.due ? pre.due.slice(0, 10) : pre.noDate ? '' : S.sel;
@@ -299,14 +411,15 @@ function openForm(pre = {}) {
     ${pre.heard ? `<div class="heard"><b>Você disse:</b> “${esc(pre.heard)}”</div>` : ''}
     <div class="opts" id="fKind">${[['tarefa', 'Tarefa'], ['lembrete', 'Lembrete'], ['reuniao', 'Reunião']].map(([k, l]) => `<button type="button" class="opt y" data-k="${k}" aria-pressed="${f.kind === k}" ${editing && pre.kind === 'reuniao' && k !== 'reuniao' && pre.members.length > 1 ? 'disabled' : ''}>${l}</button>`).join('')}</div>
     <label class="f">O quê?<input class="inp" id="fTitle" required maxlength="140" placeholder="Ex.: Pagar a conta de luz" value="${esc(pre.title || '')}"></label>
-    <div class="opts" id="fCat"><button type="button" class="opt p" data-c="pessoal" aria-pressed="${f.cat === 'pessoal'}">Pessoal</button><button type="button" class="opt e" data-c="empresa" aria-pressed="${f.cat === 'empresa'}">Empresa</button></div>
+    <div class="opts" id="fCat"><button type="button" class="opt p" data-c="pessoal" aria-pressed="${f.cat === 'pessoal'}" ${!P.pessoal && f.cat !== 'pessoal' ? 'disabled title="Sem acesso"' : ''}>Pessoal</button><button type="button" class="opt e" data-c="empresa" aria-pressed="${f.cat === 'empresa'}" ${!P.empresa && f.cat !== 'empresa' ? 'disabled title="Sem acesso"' : ''}>Empresa</button></div>
     <div class="row2"><label class="f">Dia<input class="inp" type="date" id="fDate" value="${date}"></label><label class="f">Horário<input class="inp" type="time" id="fTime" value="${timeOf(pre.due || '')}"></label></div>
     <label class="f">Repetir<select class="inp" id="fRec">${RECURRENCE.map(([v, l]) => `<option value="${v}" ${(pre.recurrence || '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
     <div class="f"><span>Alertas</span><div class="chips" id="fAlerts">${alertChips(f.alerts)}</div></div>
     <div id="fMeet" class="detail-sec" ${f.kind === 'reuniao' ? '' : 'hidden'}>
-      <label class="f">Convidar por e-mail<div style="display:flex;gap:8px"><input class="inp" id="fWho" type="email" inputmode="email" placeholder="nome@empresa.com"><button type="button" class="ghost" id="fAdd">Adicionar</button></div></label>
+      ${P.convite ? '' : '<p class="note" style="margin:0;color:var(--red)">O administrador do grupo não liberou o envio de convites para você.</p>'}
+      <label class="f" ${P.convite ? '' : 'hidden'}>Convidar por e-mail<div style="display:flex;gap:8px"><input class="inp" id="fWho" type="email" inputmode="email" placeholder="nome@empresa.com"><button type="button" class="ghost" id="fAdd">Adicionar</button></div></label>
       <div class="people" id="fChips"></div>
-      <p class="note" style="margin:0">Quem tem conta no RN Group recebe o convite e os alertas na hora. Quem ainda não tem recebe quando criar a conta com esse e-mail, e você também pode mandar pelo WhatsApp.</p>
+      <p class="note" style="margin:0" ${P.convite ? '' : 'hidden'}>Quem tem conta no RN Group recebe o convite e os alertas na hora. Quem ainda não tem recebe quando criar a conta com esse e-mail, e você também pode mandar pelo WhatsApp.</p>
       <label class="f">Local ou link<input class="inp" id="fPlace" maxlength="200" placeholder="Sala, endereço ou link do Meet" value="${esc(pre.place || '')}"></label>
       <label class="f">Pauta<textarea class="inp" id="fAgenda" maxlength="2000" placeholder="Assuntos da reunião, um por linha">${esc(pre.agenda || '')}</textarea></label>
     </div>
@@ -317,8 +430,8 @@ function openForm(pre = {}) {
   };
   paint();
   const setCat = (c) => { f.cat = c; $$('#fCat .opt').forEach((b) => b.setAttribute('aria-pressed', b.dataset.c === c)); $('#fSave').style.setProperty('--c', c === 'empresa' ? 'var(--blue)' : 'var(--green)'); };
-  $('#fKind').onclick = (e) => { const k = e.target.dataset.k; if (!k) return; f.kind = k; $$('#fKind .opt').forEach((b) => b.setAttribute('aria-pressed', b.dataset.k === k)); $('#fMeet').hidden = k !== 'reuniao'; if (k === 'reuniao' && !pre.cat) setCat('empresa'); };
-  $('#fCat').onclick = (e) => { if (e.target.dataset.c) setCat(e.target.dataset.c); };
+  $('#fKind').onclick = (e) => { const k = e.target.dataset.k; if (!k) return; f.kind = k; $$('#fKind .opt').forEach((b) => b.setAttribute('aria-pressed', b.dataset.k === k)); $('#fMeet').hidden = k !== 'reuniao'; if (k === 'reuniao' && !pre.cat && P.empresa) setCat('empresa'); };
+  $('#fCat').onclick = (e) => { const c = e.target.dataset.c; if (c && !e.target.disabled) setCat(c); };
   $('#fAlerts').onclick = (e) => { const b = e.target.closest('[data-al]'); if (!b) return; const v = +b.dataset.al; f.alerts = f.alerts.includes(v) ? f.alerts.filter((x) => x !== v) : [...f.alerts, v].sort((a, c) => c - a); b.setAttribute('aria-pressed', f.alerts.includes(v)); };
   const addWho = () => {
     const v = $('#fWho').value.trim(); if (!v) return;
@@ -335,6 +448,7 @@ function openForm(pre = {}) {
   el.onsubmit = safe(async (e) => {
     e.preventDefault();
     if ($('#fWho').value.trim()) addWho();
+    if (!P.convite) f.invites = f.invites.filter((g) => g.id);
     const title = $('#fTitle').value.trim(); if (!title) return;
     const d = $('#fDate').value, tm = $('#fTime').value;
     if (f.kind === 'reuniao' && (!d || !tm)) { toast('Para marcar reunião, escolha dia e horário'); return; }
@@ -410,7 +524,7 @@ function openDetail(id) {
       ${it.isOwner ? '<button class="ghost" data-d="edit">Editar</button><button class="ghost" data-d="resch">Reagendar</button>' : meeting ? '<button class="ghost" data-d="ask">Pedir novo horário</button>' : ''}
       ${meeting ? '<button class="ghost" data-d="late">Estou atrasado</button>' : ''}
       ${it.due && it.due.length > 10 && !it.done ? '<button class="ghost" data-d="snooze">Lembrar em 10 min</button>' : ''}
-      ${meeting && it.isOwner && it.members.length > 1 ? '<button class="ghost" data-d="share">Enviar convite</button>' : ''}
+      ${meeting && it.isOwner && it.members.length > 1 && S.perms.convite ? '<button class="ghost" data-d="share">Enviar convite</button>' : ''}
       ${it.isOwner ? `<button class="ghost" data-d="del" style="color:var(--red)">${meeting && it.members.length > 1 ? 'Cancelar reunião' : 'Excluir'}</button>` : ''}
     </div>`);
   const el = $('#sheet'); el.dataset.mid = it.id;
@@ -639,6 +753,7 @@ function checkReminders() {
 /* ---------- eventos ---------- */
 document.addEventListener('click', safe(async (e) => {
   const t = e.target;
+  if (t.closest('#groupsCard') && await groupClick(t)) return;
   const day = t.closest('[data-day]'); if (day) { S.sel = day.dataset.day; render(); return; }
   const nw = t.closest('[data-new]'); if (nw) { const k = nw.dataset.new; openForm(k === 'reuniao' ? { kind: 'reuniao', cat: 'empresa' } : { cat: k }); return; }
   const fl = t.closest('[data-filter]'); if (fl) { S.filter = fl.dataset.filter; $$('#seg button').forEach((b) => b.setAttribute('aria-pressed', b.dataset.f === S.filter)); render(); $('#seg').scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
@@ -660,7 +775,7 @@ document.addEventListener('click', safe(async (e) => {
     return;
   }
   if (t.closest('#testRem')) { audioOK = true; toast('Teste: assim chega o alerta das suas tarefas', 6000); beep(); return; }
-  if (t.closest('#logout')) { await api.signOut(); location.reload(); return; }
+  if (t.closest('#logout') || t.closest('#logoutTop')) { confirmLogout(); return; }
 
   // aceitar / manter pedido de novo horário (no card ou nos detalhes)
   const acc = t.closest('[data-acc]'), ign = t.closest('[data-ign]');

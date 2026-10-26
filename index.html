@@ -26,8 +26,11 @@
   <div id="banners" style="display:flex;flex-direction:column;gap:10px"></div>
   <header class="top">
     <div class="brand"><b>RN</b> Group</div>
+    <div class="top-r">
     <label class="theme"><svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4" fill="currentColor"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
       <select id="themeSel" aria-label="Tema"><option value="light">Claro</option><option value="dark">Escuro</option><option value="system">Sistema</option></select></label>
+    <button class="out" id="logoutTop" aria-label="Sair da conta"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="M10 17l-5-5 5-5M5 12h11"/></svg>Sair</button>
+    </div>
   </header>
 
   <!-- HOJE -->
@@ -95,6 +98,10 @@
       <div class="profile">
         <div style="display:flex;justify-content:space-between;gap:10px;align-items:center"><div><b style="font-size:16px">Resumo do dia</b><div class="note">Chega como notificação e você ouve em áudio</div></div><label style="display:flex;gap:6px;align-items:center;font-weight:600"><input type="checkbox" id="briefOn"> Ativo</label></div>
         <label class="f">Horário do resumo<input class="inp" type="time" id="briefTime" value="07:00"></label>
+      </div>
+      <div class="profile" id="groupsCard">
+        <div style="display:flex;justify-content:space-between;gap:10px;align-items:center"><div><b style="font-size:16px">Grupos e acessos</b><div class="note">O administrador define o que cada pessoa pode criar</div></div><button class="ghost" id="newGroup" style="white-space:nowrap">Criar grupo</button></div>
+        <div id="groupsList" style="display:flex;flex-direction:column;gap:14px"></div>
       </div>
       <button class="ghost" id="logout" style="color:var(--red)">Sair da conta</button>
       <p class="note" id="modeNote2"></p>

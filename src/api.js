@@ -56,7 +56,7 @@ function cloudApi() {
       let t;
       const fire = () => { clearTimeout(t); t = setTimeout(cb, 300); };
       const ch = sb.channel('rn-group');
-      for (const table of ['items', 'item_members', 'reschedules', 'reschedule_requests', 'notices']) {
+      for (const table of ['items', 'item_members', 'reschedules', 'reschedule_requests', 'notices', 'groups', 'group_members']) {
         ch.on('postgres_changes', { event: '*', schema: 'public', table }, fire);
       }
       ch.subscribe();
@@ -112,6 +112,36 @@ function cloudApi() {
       return data?.value || null;
     },
     async removePush(endpoint) { await sb.from('push_subscriptions').delete().eq('endpoint', endpoint); },
+
+    // ----- grupos -----
+    async loadGroups() {
+      const { data, error } = await sb.from('groups').select('*, group_members(*)').order('created_at');
+      if (error) throw error;
+      const ids = [...new Set(data.flatMap((g) => g.group_members.map((m) => m.user_id)).filter(Boolean))];
+      let profiles = [];
+      if (ids.length) { const r = await sb.from('profiles').select('id, name, email').in('id', ids); profiles = r.data || []; }
+      return { groups: data, profiles };
+    },
+    async createGroup(name) {
+      const { data, error } = await sb.from('groups').insert({ name, created_by: api.uid }).select('id').single();
+      if (error) throw error;
+      return data.id;
+    },
+    async updateGroup(id, patch) { const { error } = await sb.from('groups').update(patch).eq('id', id); if (error) throw error; },
+    async deleteGroup(id) { const { error } = await sb.from('groups').delete().eq('id', id); if (error) throw error; },
+    async addGroupMember(groupId, email, perms) {
+      email = email.trim().toLowerCase();
+      const { data } = await sb.rpc('find_user_by_email', { p_email: email });
+      const hit = data && data[0];
+      const { error } = await sb.from('group_members').insert({ group_id: groupId, user_id: hit?.id || null, email, role: 'membro', ...perms });
+      if (error) throw error;
+      return !!hit;
+    },
+    async updateGroupMember(id, patch) { const { error } = await sb.from('group_members').update(patch).eq('id', id); if (error) throw error; },
+    async updateAllGroupMembers(groupId, patch) {
+      const { error } = await sb.from('group_members').update(patch).eq('group_id', groupId).eq('role', 'membro'); if (error) throw error;
+    },
+    async removeGroupMember(id) { const { error } = await sb.from('group_members').delete().eq('id', id); if (error) throw error; },
   };
   return api;
 }
@@ -121,6 +151,7 @@ function demoApi() {
   const KEYS = 'rng.demo';
   const load = () => { try { return JSON.parse(localStorage.getItem(KEYS)) || null; } catch { return null; } };
   let db = load() || { profile: null, items: [], members: [], reschedules: [], reschedule_requests: [], notices: [] };
+  db.groups ||= []; db.gmembers ||= [];
   const save = () => { try { localStorage.setItem(KEYS, JSON.stringify(db)); } catch { /* sem espaço */ } listeners.forEach((f) => f()); };
   const listeners = new Set();
   const id = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -136,7 +167,7 @@ function demoApi() {
       save();
     },
     async resetPassword() {}, async setPassword() {},
-    async signOut() { localStorage.removeItem(KEYS); db = { profile: null, items: [], members: [], reschedules: [], reschedule_requests: [], notices: [] }; },
+    async signOut() { localStorage.removeItem(KEYS); db = { profile: null, items: [], members: [], reschedules: [], reschedule_requests: [], notices: [], groups: [], gmembers: [] }; },
     async afterLogin() {},
     async loadProfile() { return db.profile; },
     async updateProfile(p) { Object.assign(db.profile, p); save(); },
@@ -173,6 +204,26 @@ function demoApi() {
     async addNotice(item_id, minutes, message) { db.notices.push({ id: id(), item_id, minutes, message, by: 'demo', kind: 'atraso', created_at: now() }); save(); },
     async notify() {},
     async savePush() {}, async removePush() {}, async getConfig() { return null; },
+    async loadGroups() {
+      return { groups: db.groups.map((g) => ({ ...g, group_members: db.gmembers.filter((m) => m.group_id === g.id) })), profiles: [] };
+    },
+    async createGroup(name) {
+      const g = { id: id(), name, created_by: 'demo', can_pessoal: true, can_empresa: true, can_invite: true, created_at: now() };
+      db.groups.push(g);
+      db.gmembers.push({ id: id(), group_id: g.id, user_id: 'demo', email: api.email, role: 'admin', can_pessoal: true, can_empresa: true, can_invite: true, created_at: now() });
+      save(); return g.id;
+    },
+    async updateGroup(gid, p) { Object.assign(db.groups.find((g) => g.id === gid) || {}, p); save(); },
+    async deleteGroup(gid) { db.groups = db.groups.filter((g) => g.id !== gid); db.gmembers = db.gmembers.filter((m) => m.group_id !== gid); save(); },
+    async addGroupMember(gid, email, perms) {
+      email = email.trim().toLowerCase();
+      if (db.gmembers.some((m) => m.group_id === gid && m.email === email)) throw new Error('duplicate key');
+      db.gmembers.push({ id: id(), group_id: gid, user_id: null, email, role: 'membro', can_pessoal: true, can_empresa: true, can_invite: true, ...perms, created_at: now() });
+      save(); return false;
+    },
+    async updateGroupMember(mid, p) { Object.assign(db.gmembers.find((m) => m.id === mid) || {}, p); save(); },
+    async updateAllGroupMembers(gid, p) { db.gmembers.filter((m) => m.group_id === gid && m.role === 'membro').forEach((m) => Object.assign(m, p)); save(); },
+    async removeGroupMember(mid) { db.gmembers = db.gmembers.filter((m) => m.id !== mid); save(); },
   };
   return api;
 }
