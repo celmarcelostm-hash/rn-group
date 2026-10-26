@@ -1,12 +1,12 @@
 
 /* Layout: coluna única estilo app de celular (máx. 560px), cards arredondados, barra de navegação fixa embaixo */
 :root{
-  --bg:#FAF9F6; --card:#FFFFFF; --line:#ECEAE4; --fg:#121826; --muted:#5D6575; --soft:#F2F1EC;
+  --bg:#FFFFFF; --card:#FFFFFF; --line:#E6E8EE; --fg:#121826; --muted:#5D6575; --soft:#F3F4F7;
   --green:#0F7A3B; --green-soft:#E3F4E8; --green-ink:#0F7A3B;
   --blue:#0B5BD7; --blue-soft:#E4EDFC; --blue-ink:#0B5BD7;
   --yellow:#F5B400; --yellow-soft:#FFF1C7; --yellow-ink:#8A5A00;
   --red:#D92D20; --red-soft:#FDE6E4;
-  --shadow:0 6px 22px rgba(24,32,48,.07);
+  --shadow:0 2px 6px rgba(24,32,48,.06),0 8px 24px rgba(24,32,48,.08);
   --font:"Figtree",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   --r-lg:20px; --r-md:14px;
 }
@@ -194,3 +194,7 @@ textarea.inp{resize:vertical;min-height:80px}
 .big-play svg{width:36px;height:36px}
 .big-play.on{background:var(--red)}
 select.inp{appearance:auto}
+
+/* tema claro fixo quando escolhido, mesmo com o celular no modo escuro */
+:root[data-theme="light"]{color-scheme:light}
+.list,.voice,.brief,.inv-card,.profile{outline:1px solid var(--line);outline-offset:-1px}
