@@ -98,5 +98,5 @@ jobs:
         run: |
           curl -fsS -X PATCH "https://api.supabase.com/v1/projects/$REF/config/auth" \
             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" -H "Content-Type: application/json" \
-            --data "$(jq -n --arg u "$APP_URL" '{site_url:$u, uri_allow_list:($u + "/**")}')" > /dev/null
-          echo "Login configurado para $APP_URL"
+            --data "$(jq -n --arg u "$APP_URL" '{site_url:$u, uri_allow_list:($u + "/**"), disable_signup:true}')" > /dev/null
+          echo "Login configurado para $APP_URL (cadastro só pelo administrador)"

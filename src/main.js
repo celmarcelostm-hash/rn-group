@@ -3,6 +3,7 @@ import { api } from './api.js';
 import { parseFala } from './parser.js';
 import { nextOccurrence, RECURRENCE, recurrenceLabel } from './recurrence.js';
 import { permsFor, ALL } from './perms.js';
+import { cpfValido, mascaraCpf, soNumeros, usuarioValido, senhaForte } from './cpf.js';
 import { registerSW, pushStatus, enablePush, disablePush, refreshPush, isIOS, isStandalone } from './push.js';
 
 /* ---------- utilidades ---------- */
@@ -233,7 +234,7 @@ function renderProfile() {
   const name = S.profile?.name || '';
   $('#pName').textContent = name || 'Você';
   $('#pAv').textContent = (name || api.email || '?')[0].toUpperCase();
-  $('#pMail').textContent = api.mode === 'demo' ? 'Modo demonstração' : api.email || '';
+  $('#pMail').textContent = [S.profile?.username ? 'Usuário: ' + S.profile.username : '', S.profile?.email || (api.mode === 'demo' ? 'Modo demonstração' : '')].filter(Boolean).join(' · ');
   if (document.activeElement !== $('#pNameIn')) $('#pNameIn').value = name;
   $('#hello').textContent = name ? `Olá, ${name.split(' ')[0]}` : 'Olá!';
   $('#defAlerts').innerHTML = alertChips(defAlerts());
@@ -271,9 +272,22 @@ function renderPerms() {
   $$('[data-new="reuniao"]').forEach((b) => { b.hidden = !any; });
 }
 const PERMS = [['can_pessoal', 'Pessoal', 'p'], ['can_empresa', 'Empresa', 'e'], ['can_invite', 'Convites', 'y']];
-const gmName = (m) => (m.user_id === api.uid ? 'Você' : (m.user_id && S.people[m.user_id]?.name) || m.email || 'Membro');
+const gmName = (m) => {
+  if (m.user_id === api.uid) return 'Você';
+  const p = m.user_id && S.people[m.user_id];
+  return (p && (p.name || p.username)) || m.username || m.email || 'Membro';
+};
+const gmInfo = (m) => {
+  if (m.role === 'admin') return 'Administrador · acesso total';
+  const p = m.user_id && S.people[m.user_id];
+  const user = p?.username || m.username;
+  if (!m.user_id) return 'Aguardando criar a conta';
+  return [user ? 'Usuário: ' + user : p?.email || m.email || '', p?.needs_setup ?? !p ? 'Aguardando primeiro acesso' : ''].filter(Boolean).join(' · ');
+};
+const canReset = (m) => m.role !== 'admin' && !!m.user_id;
 function renderGroups() {
   const box = $('#groupsList'); if (!box) return;
+  $('#newGroup').hidden = !!S.profile?.created_by;
   if (!S.groups.length) {
     box.innerHTML = '<p class="note" style="margin:0">Crie um grupo para a sua equipe. Como administrador, você escolhe quem pode criar tarefas em Pessoal, em Empresa e quem pode enviar convites.</p>';
     return;
@@ -294,11 +308,12 @@ function renderGroups() {
       <div class="grp-h"><b>${esc(g.name)}</b><span class="pill ok">Administrador</span></div>
       <div class="f"><span>Todos os membros podem criar ou enviar:</span><div class="chips">${PERMS.map(([k, l, c]) => chip(`data-gall="${k}"`, g[k], l, c)).join('')}</div></div>
       <div class="gm-list">${members.map((m) => `<div class="gm" data-gmid="${esc(m.id)}">
-        <div class="gm-n"><span class="av">${esc(gmName(m)[0].toUpperCase())}</span><div style="min-width:0"><div class="t1">${esc(gmName(m))}</div><div class="note">${m.role === 'admin' ? 'Administrador · acesso total' : !m.user_id ? 'Aguardando criar a conta' : esc(m.email || '')}</div></div>
+        <div class="gm-n"><span class="av">${esc(gmName(m)[0].toUpperCase())}</span><div style="min-width:0"><div class="t1">${esc(gmName(m))}</div><div class="note">${esc(gmInfo(m))}</div></div>
+        ${canReset(m) ? '<button type="button" class="link" data-gmpass style="font-size:13px;white-space:nowrap">Nova senha</button>' : ''}
         ${m.role === 'admin' ? '' : `<button type="button" class="chipx" data-gmrm aria-label="Remover ${esc(gmName(m))}">✕</button>`}</div>
         ${m.role === 'admin' ? '' : `<div class="chips">${PERMS.map(([k, l, c]) => chip(`data-gperm="${k}"`, m[k], l, c)).join('')}</div>`}
       </div>`).join('')}</div>
-      <div style="display:flex;gap:8px"><input class="inp" type="email" inputmode="email" placeholder="E-mail da pessoa" data-gmail><button type="button" class="ghost" data-gadd>Adicionar</button></div>
+      <button type="button" class="btn" data-gnew style="padding:12px">+ Adicionar pessoa</button>
       <button type="button" class="link" data-gdel style="color:var(--red);align-self:flex-start">Excluir grupo</button>
     </div>`;
   }).join('');
@@ -333,14 +348,8 @@ async function groupClick(t) {
     $('#cYes').onclick = safe(async () => { await api.removeGroupMember(m.id); closeSheet(); toast('Removido do grupo'); await reload(); });
     return true;
   }
-  if (t.closest('[data-gadd]')) {
-    const inp = $('[data-gmail]', host); const v = inp.value.trim().toLowerCase();
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) { toast('Digite um e-mail válido'); return true; }
-    if (g.group_members.some((x) => x.email === v)) { toast('Essa pessoa já está no grupo'); return true; }
-    const has = await api.addGroupMember(g.id, v, { can_pessoal: g.can_pessoal, can_empresa: g.can_empresa, can_invite: g.can_invite });
-    toast(has ? 'Pessoa adicionada ao grupo' : 'Adicionada. Ela entra no grupo quando criar a conta com esse e-mail.', 5000);
-    await reload(); return true;
-  }
+  if (t.closest('[data-gnew]')) { newUserSheet(g); return true; }
+  if (t.closest('[data-gmpass]') && m) { resetPassSheet(g, m); return true; }
   if (t.closest('[data-gdel]')) {
     sheet('Excluir grupo?', `<p style="margin:0">O grupo “${esc(g.name)}” será apagado e os membros voltam a ter acesso livre. As tarefas e reuniões não são apagadas.</p><div class="inv-actions"><button class="btn" id="cYes" style="--c:var(--red)">Excluir grupo</button><button class="btn no" id="cNo">Voltar</button></div>`);
     $('#cNo').onclick = closeSheet;
@@ -348,6 +357,60 @@ async function groupClick(t) {
     return true;
   }
   return true;
+}
+const TEMP_PASS = '12345678';
+function credSheet(title, user, pass, novo) {
+  const txt = `Seu acesso ao RN Group\nEndereço: ${location.origin}\nUsuário: ${user}\nSenha temporária: ${pass}\n\nNo primeiro acesso você completa seu cadastro e cria sua senha.`;
+  sheet(title, `
+    <p style="margin:0">${novo ? 'Usuário criado e já colocado no grupo.' : 'Senha temporária definida.'} Envie os dados de acesso para a pessoa:</p>
+    <div class="share" id="crTxt">${esc(txt)}</div>
+    <div class="actions"><a class="btn" style="--c:#1FA855;text-decoration:none" href="https://wa.me/?text=${encodeURIComponent(txt)}" target="_blank" rel="noopener">Enviar no WhatsApp</a><button class="ghost" id="crCopy">Copiar</button></div>`);
+  $('#crCopy').onclick = () => copy(txt, $('#crTxt'));
+}
+function newUserSheet(g) {
+  const perms = { can_pessoal: g.can_pessoal, can_empresa: g.can_empresa, can_invite: g.can_invite };
+  const el = sheet('Adicionar pessoa', `
+    <p class="note" style="margin:0">Você cria o usuário e uma senha temporária. No primeiro acesso a pessoa completa nome, e-mail, CPF e cria a própria senha.</p>
+    <label class="f">Usuário<input class="inp" id="nuUser" required maxlength="30" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="Ex.: joao.silva"></label>
+    <span class="note" style="margin-top:-6px">Letras minúsculas, números, ponto, hífen ou _. Não pode ser mudado depois.</span>
+    <label class="f">Senha temporária<input class="inp" id="nuPass" required minlength="6" value="${TEMP_PASS}" autocomplete="off"></label>
+    <div class="f"><span>Pode criar ou enviar</span><div class="chips" id="nuPerms">${PERMS.map(([k, l, c]) => `<button type="button" class="opt ${c} sm" data-k="${k}" aria-pressed="${!!perms[k]}">${l}</button>`).join('')}</div></div>
+    <p class="err" id="nuErr" hidden></p>
+    <button class="btn" type="submit" style="padding:14px">Criar usuário</button>`, { form: true });
+  $('#nuUser').oninput = (e) => { e.target.value = e.target.value.toLowerCase().replace(/\s/g, ''); };
+  $('#nuPerms').onclick = (e) => { const b = e.target.closest('[data-k]'); if (!b) return; perms[b.dataset.k] = !perms[b.dataset.k]; b.setAttribute('aria-pressed', perms[b.dataset.k]); };
+  const fail = (m) => { $('#nuErr').textContent = m; $('#nuErr').hidden = false; };
+  el.onsubmit = async (e) => {
+    e.preventDefault();
+    const user = $('#nuUser').value.trim(), pass = $('#nuPass').value.trim();
+    if (!usuarioValido(user)) return fail('Usuário inválido: use de 3 a 30 letras minúsculas, números, ponto, hífen ou _ (sem acento e sem espaço).');
+    if (pass.length < 6) return fail('A senha temporária precisa ter pelo menos 6 caracteres.');
+    const btn = $('#sheet button[type=submit]'); btn.disabled = true;
+    try {
+      await api.adminUsers({ action: 'criar', group_id: g.id, username: user, password: pass, ...perms });
+      await reload(); credSheet('Pessoa adicionada', user, pass, true);
+    } catch (err) {
+      btn.disabled = false;
+      const c = String(err?.message || err);
+      fail(c.includes('usuario_em_uso') ? 'Este usuário já existe. Escolha outro.' : c.includes('sem_permissao') ? 'Só o administrador do grupo pode adicionar pessoas.' : 'Não foi possível criar. Verifique a internet e tente de novo.');
+    }
+  };
+  setTimeout(() => $('#nuUser')?.focus(), 60);
+}
+function resetPassSheet(g, m) {
+  const user = S.people[m.user_id]?.username || m.username || '';
+  const el = sheet('Nova senha temporária', `
+    <p style="margin:0">${esc(gmName(m))} vai entrar com esta senha e, em seguida, criar uma nova.</p>
+    <label class="f">Senha temporária<input class="inp" id="rpPass" required minlength="6" value="${TEMP_PASS}" autocomplete="off"></label>
+    <p class="err" id="rpErr" hidden></p>
+    <button class="btn" type="submit" style="padding:14px">Definir senha</button>`, { form: true });
+  el.onsubmit = async (e) => {
+    e.preventDefault();
+    const pass = $('#rpPass').value.trim();
+    if (pass.length < 6) { $('#rpErr').textContent = 'A senha precisa ter pelo menos 6 caracteres.'; $('#rpErr').hidden = false; return; }
+    try { await api.adminUsers({ action: 'senha', group_id: g.id, user_id: m.user_id, password: pass }); await reload(); credSheet('Senha redefinida', user, pass, false); }
+    catch { $('#rpErr').textContent = 'Não foi possível redefinir. Tente de novo.'; $('#rpErr').hidden = false; }
+  };
 }
 function confirmLogout() {
   sheet('Sair da conta?', `<p style="margin:0">${api.mode === 'demo' ? 'No modo demonstração, os dados deste aparelho serão apagados.' : 'Para voltar, é só entrar de novo com seu e-mail e senha. As notificações deste aparelho param até você entrar de novo.'}</p>
@@ -847,49 +910,96 @@ function openFromUrl() {
 navigator.serviceWorker?.addEventListener('message', (e) => { if (e.data?.type === 'open') { urlHandled = false; history.replaceState(null, '', e.data.url); openFromUrl(); } });
 
 /* ---------- conta ---------- */
-function renderAuth(mode = 'entrar', msg = '') {
+function renderAuth(msg = '', ok = false) {
   $('#app').hidden = true; $('.nav').hidden = true; $('#auth').hidden = false;
-  const signup = mode === 'criar';
   $('#auth').innerHTML = `
     <div><div class="brand"><b>RN</b> Group</div><div class="sub">Tarefas, lembretes e reuniões. Pessoal e Empresa.</div></div>
     <form id="authForm">
-      <div class="tabs"><button type="button" data-mode="entrar" aria-pressed="${!signup}">Entrar</button><button type="button" data-mode="criar" aria-pressed="${signup}">Criar conta</button></div>
-      ${signup ? '<label class="f">Seu nome<input class="inp" id="aName" required maxlength="60" autocomplete="name"></label>' : ''}
-      <label class="f">E-mail<input class="inp" id="aMail" type="email" required autocomplete="email" inputmode="email"></label>
-      <label class="f">Senha<input class="inp" id="aPass" type="password" required minlength="6" autocomplete="${signup ? 'new-password' : 'current-password'}"></label>
-      ${msg ? `<p class="err" role="alert">${esc(msg)}</p>` : ''}
-      <button class="btn" type="submit" style="padding:14px">${signup ? 'Criar conta' : 'Entrar'}</button>
-      ${signup ? '' : '<button type="button" class="link" id="aForgot">Esqueci minha senha</button>'}
+      <h2 style="margin:0">Entrar</h2>
+      <label class="f">Usuário<input class="inp" id="aUser" required autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="Seu usuário"></label>
+      <label class="f">Senha<input class="inp" id="aPass" type="password" required minlength="6" autocomplete="current-password"></label>
+      ${msg ? `<p class="${ok ? 'note' : 'err'}" role="alert">${esc(msg)}</p>` : ''}
+      <button class="btn" type="submit" style="padding:14px">Entrar</button>
+      <button type="button" class="link" id="aForgot">Esqueci minha senha</button>
     </form>
-    ${api.mode === 'demo' ? '<p class="note">Modo demonstração: nenhum servidor configurado. Os dados ficam só neste aparelho.</p>' : ''}`;
-  $$('[data-mode]').forEach((b) => { b.onclick = () => renderAuth(b.dataset.mode); });
-  $('#aForgot') && ($('#aForgot').onclick = async () => {
-    const m = $('#aMail').value.trim(); if (!m) { renderAuth('entrar', 'Digite seu e-mail e toque de novo em Esqueci minha senha.'); return; }
-    try { await api.resetPassword(m); renderAuth('entrar', 'Enviamos um link para criar uma nova senha. Veja seu e-mail.'); } catch (e) { renderAuth('entrar', traduz(e)); }
-  });
+    <p class="note">Ainda não tem acesso? Peça ao administrador do seu grupo o seu usuário e a senha temporária.</p>
+    ${api.mode === 'demo' ? '<p class="note">Modo demonstração: digite qualquer usuário e senha. Os dados ficam só neste aparelho.</p>' : ''}`;
+  $('#aForgot').onclick = async () => {
+    const u = $('#aUser').value.trim();
+    if (u.includes('@')) {
+      try { await api.resetPassword(u); renderAuth('Enviamos um link para criar uma nova senha. Veja seu e-mail.', true); } catch (e) { renderAuth(traduz(e)); }
+      return;
+    }
+    renderAuth('Peça ao administrador do seu grupo uma nova senha temporária. No próximo acesso você cria a sua.', true);
+  };
   $('#authForm').onsubmit = async (e) => {
     e.preventDefault();
-    const email = $('#aMail').value.trim(), pass = $('#aPass').value;
+    const btn = $('#authForm button[type=submit]'); btn.disabled = true;
+    try { await api.signIn($('#aUser').value, $('#aPass').value); await startApp(); } catch (err) { renderAuth(traduz(err)); }
+  };
+  setTimeout(() => $('#aUser')?.focus(), 60);
+}
+
+/* primeiro acesso: completar cadastro e trocar a senha temporária */
+async function renderSetup(msg = '') {
+  $('#app').hidden = true; $('.nav').hidden = true; $('#auth').hidden = false;
+  const p = S.profile || {};
+  const cpf0 = await api.loadCpf().catch(() => '');
+  $('#auth').innerHTML = `
+    <div><div class="brand"><b>RN</b> Group</div><div class="sub">Bem-vindo! Complete seu cadastro para começar.</div></div>
+    <form id="setupForm" novalidate>
+      <h2 style="margin:0">Complete seu cadastro</h2>
+      ${p.username ? `<div class="note">Seu usuário: <b>${esc(p.username)}</b> (é com ele que você entra)</div>` : ''}
+      <label class="f">Nome completo<input class="inp" id="sName" required maxlength="80" autocomplete="name" value="${esc(p.name || '')}"></label>
+      <label class="f">E-mail<input class="inp" id="sMail" type="email" required inputmode="email" autocomplete="email" value="${esc(p.email || '')}"></label>
+      <label class="f">CPF<input class="inp" id="sCpf" required inputmode="numeric" placeholder="000.000.000-00" maxlength="14" value="${esc(mascaraCpf(cpf0))}"></label>
+      <label class="f">Crie sua senha<input class="inp" id="sPass" type="password" required minlength="6" autocomplete="new-password"></label>
+      <span class="note" style="margin-top:-6px">Mínimo de 6 caracteres, com letra maiúscula e minúscula.</span>
+      <label class="f">Confirme a senha<input class="inp" id="sPass2" type="password" required minlength="6" autocomplete="new-password"></label>
+      <p class="err" role="alert" id="sErr" ${msg ? '' : 'hidden'}>${esc(msg)}</p>
+      <button class="btn" type="submit" style="padding:14px">Salvar e entrar</button>
+    </form>
+    <button type="button" class="link" id="sOut">Sair</button>`;
+  $('#sCpf').oninput = (e) => { e.target.value = mascaraCpf(e.target.value); };
+  $('#sOut').onclick = async () => { await api.signOut(); location.reload(); };
+  let pwdSet = null;
+  const fail = (m) => { $('#sErr').textContent = m; $('#sErr').hidden = false; $('#setupForm button[type=submit]').disabled = false; };
+  $('#setupForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const name = $('#sName').value.trim().replace(/\s+/g, ' '), email = $('#sMail').value.trim().toLowerCase(), cpf = soNumeros($('#sCpf').value);
+    const pass = $('#sPass').value, pass2 = $('#sPass2').value;
+    if (name.length < 3 || !name.includes(' ')) return fail('Digite seu nome completo (nome e sobrenome).');
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return fail('Digite um e-mail válido.');
+    if (!cpfValido(cpf)) return fail('CPF inválido. Confira os números.');
+    if (!senhaForte(pass)) return fail('A senha precisa ter pelo menos 6 caracteres, com letra maiúscula e minúscula.');
+    if (pass !== pass2) return fail('As duas senhas não são iguais.');
+    $('#setupForm button[type=submit]').disabled = true;
     try {
-      if (signup) {
-        const r = await api.signUp($('#aName').value.trim(), email, pass);
-        if (r.needsConfirm) { renderAuth('entrar', 'Conta criada! Abra o e-mail de confirmação e depois entre aqui.'); return; }
-      } else await api.signIn(email, pass);
+      if (pwdSet !== pass) { await api.setPasswordOnly(pass); pwdSet = pass; }
+      await api.completeProfile(name, email, cpf);
+      S.profile = await api.loadProfile();
+      toast('Cadastro concluído!');
       await startApp();
-    } catch (err) { renderAuth(mode, traduz(err)); }
+    } catch (err) { fail(traduz(err)); }
   };
 }
 const traduz = (e) => {
   const m = String(e?.message || e);
-  if (/Invalid login/i.test(m)) return 'E-mail ou senha incorretos.';
+  if (/Invalid login/i.test(m)) return 'Usuário ou senha incorretos.';
   if (/already registered/i.test(m)) return 'Este e-mail já tem conta. Use Entrar.';
   if (/Email not confirmed/i.test(m)) return 'Confirme seu e-mail antes de entrar (veja sua caixa de entrada).';
   if (/Password should be/i.test(m)) return 'A senha precisa ter pelo menos 6 caracteres.';
+  if (/different from the old/i.test(m)) return 'A nova senha precisa ser diferente da senha temporária.';
+  if (/nome_incompleto/.test(m)) return 'Digite seu nome completo (nome e sobrenome).';
+  if (/email_invalido/.test(m)) return 'Digite um e-mail válido.';
+  if (/cpf_invalido/.test(m)) return 'CPF inválido. Confira os números.';
+  if (/email_em_uso/.test(m)) return 'Este e-mail já está cadastrado para outra pessoa.';
+  if (/cpf_em_uso/.test(m)) return 'Este CPF já está cadastrado para outra pessoa.';
   return 'Não deu certo: ' + m;
 };
 function newPasswordSheet() {
   const el = sheet('Nova senha', '<label class="f">Nova senha<input class="inp" id="np" type="password" minlength="6" required autocomplete="new-password"></label><button class="btn" type="submit">Salvar senha</button>', { form: true });
-  el.onsubmit = safe(async (e) => { e.preventDefault(); await api.setPassword($('#np').value); closeSheet(); toast('Senha alterada'); });
+  el.onsubmit = safe(async (e) => { e.preventDefault(); if (!senhaForte($('#np').value)) { toast('A senha precisa ter pelo menos 6 caracteres, com letra maiúscula e minúscula.', 5000); return; } await api.setPassword($('#np').value); closeSheet(); toast('Senha alterada'); });
 }
 
 let unsub = null;
@@ -898,6 +1008,7 @@ async function startApp() {
   if (!S.user) { renderAuth(); return; }
   await api.afterLogin().catch(() => {});
   S.profile = (await api.loadProfile()) || { name: '', default_alerts: [240, 60, 10], brief_on: true, brief_time: '07:00' };
+  if (S.profile.needs_setup) { await renderSetup(); return; }
   $('#auth').hidden = true; $('#app').hidden = false; $('.nav').hidden = false;
   S.push = await pushStatus().catch(() => 'indisponivel');
   refreshPush();
