@@ -35,26 +35,19 @@
 
   <!-- HOJE -->
   <section class="view" id="v-hoje">
-    <div style="display:flex;flex-direction:column;gap:18px">
+    <div class="hoje">
       <div><h1 id="hello">Olá!</h1><div class="sub">Seu dia, sob controle.</div></div>
       <div class="week" id="week"></div>
-      <div class="cats">
-        <div class="cat p">
-          <button class="cat-h" data-filter="pessoal"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4.5-6 8-6s7 2 8 6"/></svg></span><span><b>Pessoal</b><em id="cnt-p">0 pendentes</em></span><span class="chev">›</span></button>
-          <button class="btn" data-new="pessoal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Criar tarefa</button>
-        </div>
-        <div class="cat e">
-          <button class="cat-h" data-filter="empresa"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M3 12h18"/></svg></span><span><b>Empresa</b><em id="cnt-e">0 pendentes</em></span><span class="chev">›</span></button>
-          <button class="btn" data-new="empresa"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Criar tarefa</button>
-        </div>
+      <div class="sum" id="summary"></div>
+      <div class="sec-h"><h2 id="dayTitle">Agenda do dia</h2><button class="link" data-go="agenda">Ver todos ›</button></div>
+      <div class="tl" id="dayList"></div>
+      <div class="cta">
+        <button class="btn" style="--c:var(--green)" data-new="tarefa"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span>Criar tarefa</span></button>
+        <button class="btn" style="--c:var(--blue)" data-new="reuniao"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span>Criar reunião</span></button>
       </div>
-      <button class="voice" id="voiceBtn"><span class="mic"><svg viewBox="0 0 24 24" fill="currentColor"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M12 18v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span><span id="voiceTxt">Toque para falar uma tarefa</span><span class="wave" aria-hidden="true"><i style="height:10px"></i><i style="height:18px"></i><i style="height:26px"></i><i style="height:14px"></i><i style="height:20px"></i><i style="height:8px"></i></span></button>
-      <div class="brief" id="brief"><div class="brief-h"><button class="play" id="playBrief" aria-label="Ouvir resumo do dia"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button><div style="flex:1;min-width:0"><b>Resumo do dia</b><span class="note" id="briefSub">Toque para ouvir</span></div><button class="link" id="toggleBrief" aria-expanded="false">Ler</button></div><div class="brief-txt" id="briefTxt" hidden></div></div>
-      <div class="sec-h"><h2 id="dayTitle">Seu dia</h2><button class="link" data-go="agenda">Ver todos ›</button></div>
-      <div class="seg" id="seg"><button data-f="todas" aria-pressed="true">Todas</button><button data-f="pessoal" aria-pressed="false">Pessoal</button><button data-f="empresa" aria-pressed="false">Empresa</button></div>
-      <div class="list" id="dayList"></div>
-      <div><h2>Para organizar</h2></div>
-      <div id="undated"></div>
+      <div class="sec-h"><h2>Próximos agendamentos</h2><button class="link" data-go="agenda">Ver todos ›</button></div>
+      <div class="up" id="upcoming"></div>
+      <div id="undatedWrap" style="display:flex;flex-direction:column;gap:10px"><h2>Para organizar</h2><div id="undated"></div></div>
       <p class="note" id="modeNote"></p>
     </div>
   </section>
@@ -110,8 +103,9 @@
 </div>
 
 <nav class="nav" hidden><div class="nav-in">
-  <button data-go="hoje" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg>Hoje</button>
-  <button data-go="agenda"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/><rect x="7" y="13" width="4" height="4" rx="1"/></svg>Agenda</button>
+  <button data-go="hoje" aria-current="page"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg>Hoje</button>
+  <button data-go="agenda"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Agenda</button>
+  <div class="fab-slot"><button class="fab" id="fab" aria-label="Criar novo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button></div>
   <button data-go="convites"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.8c2 .8 3.2 2.6 3.6 5.2"/></svg>Convites<span class="badge" id="invBadge" hidden>0</span></button>
   <button data-go="perfil"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4.5-6 8-6s7 2 8 6"/></svg>Perfil</button>
 </div></nav>
