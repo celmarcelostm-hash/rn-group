@@ -423,3 +423,6 @@ verify_jwt = false   # protegida por TELEGRAM_WEBHOOK_SECRET
 
 [functions.notify]
 verify_jwt = true
+
+[functions.admin-users]
+verify_jwt = true

@@ -1,6 +1,7 @@
 // Acesso aos dados. Usa o Supabase quando as variáveis estão configuradas;
 // sem elas, roda em "modo demonstração" guardando tudo neste aparelho.
 import { createClient } from '@supabase/supabase-js';
+import { loginEmail } from './cpf.js';
 
 const URL = import.meta.env.VITE_SUPABASE_URL;
 const KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -20,7 +21,7 @@ function cloudApi() {
       return u;
     },
     onAuth(cb) { sb.auth.onAuthStateChange((_e, s) => { api.uid = s?.user?.id || null; api.email = s?.user?.email || null; cb(s?.user || null); }); },
-    async signIn(email, password) { const { error } = await sb.auth.signInWithPassword({ email, password }); if (error) throw error; },
+    async signIn(login, password) { const { error } = await sb.auth.signInWithPassword({ email: loginEmail(login), password }); if (error) throw error; },
     async signUp(name, email, password) {
       const { data, error } = await sb.auth.signUp({ email, password, options: { data: { name }, emailRedirectTo: location.origin } });
       if (error) throw error;
@@ -113,13 +114,29 @@ function cloudApi() {
     },
     async removePush(endpoint) { await sb.from('push_subscriptions').delete().eq('endpoint', endpoint); },
 
+    // ----- cadastro -----
+    async loadCpf() { const { data } = await sb.from('profile_private').select('cpf').eq('id', api.uid).maybeSingle(); return data?.cpf || ''; },
+    async setPasswordOnly(password) { const { error } = await sb.auth.updateUser({ password }); if (error) throw error; },
+    async completeProfile(name, email, cpf) {
+      const { error } = await sb.rpc('complete_profile', { p_name: name, p_email: email, p_cpf: cpf }); if (error) throw error;
+    },
+    async adminUsers(body) {
+      const { data, error } = await sb.functions.invoke('admin-users', { body });
+      if (error) {
+        let code = 'falhou';
+        try { code = (await error.context.json()).error || code; } catch { /* sem corpo */ }
+        throw new Error(code);
+      }
+      return data;
+    },
+
     // ----- grupos -----
     async loadGroups() {
       const { data, error } = await sb.from('groups').select('*, group_members(*)').order('created_at');
       if (error) throw error;
       const ids = [...new Set(data.flatMap((g) => g.group_members.map((m) => m.user_id)).filter(Boolean))];
       let profiles = [];
-      if (ids.length) { const r = await sb.from('profiles').select('id, name, email').in('id', ids); profiles = r.data || []; }
+      if (ids.length) { const r = await sb.from('profiles').select('id, name, email, username, needs_setup, created_by').in('id', ids); profiles = r.data || []; }
       return { groups: data, profiles };
     },
     async createGroup(name) {
@@ -160,10 +177,10 @@ function demoApi() {
     mode: 'demo', uid: 'demo', email: 'voce@exemplo.com',
     async session() { return db.profile ? { id: 'demo' } : null; },
     onAuth() {},
-    async signIn() { api._ensure(); },
+    async signIn(login) { api._ensure('', String(login || '').trim().toLowerCase()); },
     async signUp(name) { api._ensure(name); return { needsConfirm: false }; },
-    _ensure(name = '') {
-      if (!db.profile) db.profile = { id: 'demo', name, email: api.email, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, default_alerts: [240, 60, 10], brief_on: true, brief_time: '07:00', telegram_user: '', telegram_on: false, telegram_link_code: 'demo' };
+    _ensure(name = '', username = '') {
+      if (!db.profile) db.profile = { id: 'demo', name, username, needs_setup: !name, created_by: null, email: name ? api.email : '', timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, default_alerts: [240, 60, 10], brief_on: true, brief_time: '07:00', telegram_user: '', telegram_on: false, telegram_link_code: 'demo' };
       save();
     },
     async resetPassword() {}, async setPassword() {},
@@ -204,8 +221,19 @@ function demoApi() {
     async addNotice(item_id, minutes, message) { db.notices.push({ id: id(), item_id, minutes, message, by: 'demo', kind: 'atraso', created_at: now() }); save(); },
     async notify() {},
     async savePush() {}, async removePush() {}, async getConfig() { return null; },
+    async loadCpf() { return db.profile?.cpf || ''; },
+    async setPasswordOnly() {},
+    async completeProfile(name, email, cpf) { Object.assign(db.profile, { name, email, cpf, needs_setup: false }); save(); },
+    async adminUsers(body) {
+      if (body.action === 'criar') {
+        if (db.gmembers.some((m) => m.username === body.username)) throw new Error('usuario_em_uso');
+        db.gmembers.push({ id: id(), group_id: body.group_id, user_id: 'u-' + id(), username: body.username, email: null, role: 'membro', can_pessoal: body.can_pessoal ?? true, can_empresa: body.can_empresa ?? true, can_invite: body.can_invite ?? true, created_at: now() });
+        save();
+      }
+      return { ok: true, username: body.username };
+    },
     async loadGroups() {
-      return { groups: db.groups.map((g) => ({ ...g, group_members: db.gmembers.filter((m) => m.group_id === g.id) })), profiles: [] };
+      return { groups: db.groups.map((g) => ({ ...g, group_members: db.gmembers.filter((m) => m.group_id === g.id) })), profiles: db.gmembers.filter((m) => m.username).map((m) => ({ id: m.user_id, name: '', username: m.username, needs_setup: true, created_by: 'demo' })) };
     },
     async createGroup(name) {
       const g = { id: id(), name, created_by: 'demo', can_pessoal: true, can_empresa: true, can_invite: true, created_at: now() };

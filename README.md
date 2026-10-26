@@ -70,7 +70,17 @@ banco, segurança, chaves do push, agendador de alertas (a cada minuto) e funç�
 
 - **Android (Chrome)**: abra o endereço e toque em **Instalar**.
 - **iPhone (Safari, iOS 16.4+)**: **Compartilhar → Adicionar à Tela de Início**, abra pelo ícone.
-- Crie sua conta, vá em **Perfil → Notificação no celular → Ativar** e toque em **Testar alerta**.
+- Entre, vá em **Perfil → Notificação no celular → Ativar** e toque em **Testar alerta**.
+
+### Usuários e acesso
+
+- Não existe cadastro aberto. O administrador cria cada pessoa em **Perfil → Grupos e acessos → Adicionar pessoa**,
+  com um **usuário** fixo e a **senha temporária** (padrão `12345678`), e já escolhe o que ela pode fazer.
+- No primeiro acesso, a pessoa completa **nome completo, e-mail, CPF** e cria a própria senha
+  (mínimo de 6 caracteres, com letra maiúscula e minúscula, digitada duas vezes).
+- Depois disso, o login pede só **usuário e senha**.
+- Esqueceu a senha? O administrador toca em **Nova senha** ao lado da pessoa e ela volta para a senha temporária.
+- Contas antigas, criadas com e-mail, continuam entrando com o e-mail no campo Usuário.
 
 ### Telegram (quando quiser ligar)
 
