@@ -29,6 +29,15 @@ const ICON = {
   repeat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4"/><path d="M21 13v2a3 3 0 0 1-3 3H3"/></svg>',
   play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>',
   stop: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>',
+  doc: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M6 3h9l4 4v14H6z"/><path d="M9 12h7M9 16h7M9 8h4"/></svg>',
+  people2: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5z"/><circle cx="17" cy="9" r="2.6" opacity=".75"/><path d="M15.5 14.6c3 .1 5.2 1.9 6 5.4h-4.3c-.3-2.1-.9-3.9-1.7-5.4z" opacity=".75"/></svg>',
+  bell: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 21h4"/></svg>',
+  phone: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.4 11.4 0 0 0 3.6.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.6a1 1 0 0 1-.25 1z"/></svg>',
+  box: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/></svg>',
+  money: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/></svg>',
+  task: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8.5 12l2.5 2.5 4.5-5"/></svg>',
+  cal: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
+  mic: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M12 18v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
 };
 
 /* ---------- datas: banco (ISO) <-> tela (local) ---------- */
@@ -110,7 +119,7 @@ const byDue = (a, b) => (a.due || '9').localeCompare(b.due || '9');
 /* ---------- render ---------- */
 function render() {
   if (!S.user) return;
-  renderBanners(); renderWeek(); renderCounts(); renderDay(); renderUndated(); renderAgenda(); renderInvites(); renderProfile(); renderBrief(); renderPerms(); renderGroups();
+  renderBanners(); renderWeek(); renderSummary(); renderDay(); renderUpcoming(); renderUndated(); renderAgenda(); renderInvites(); renderProfile(); renderBrief(); renderPerms(); renderGroups();
 }
 function renderBanners() {
   const b = [];
@@ -131,13 +140,77 @@ function renderWeek() {
   }
   $('#week').innerHTML = h;
   const t = new Date(S.sel + 'T12:00');
-  $('#dayTitle').textContent = S.sel === ymd(new Date()) ? 'Seu dia' : `${DIAS_L[t.getDay()][0].toUpperCase() + DIAS_L[t.getDay()].slice(1)}, ${t.getDate()} ${MESES[t.getMonth()]}`;
+  $('#dayTitle').textContent = S.sel === ymd(new Date()) ? 'Agenda do dia' : `Agenda de ${DIAS_L[t.getDay()]}, ${t.getDate()} ${MESES[t.getMonth()]}`;
 }
-function renderCounts() {
-  const its = visible().filter((x) => !x.done);
-  const n = (c) => its.filter((x) => x.cat === c).length;
-  const lbl = (k) => `${k} pendente${k === 1 ? '' : 's'}`;
-  $('#cnt-p').textContent = lbl(n('pessoal')); $('#cnt-e').textContent = lbl(n('empresa'));
+const plural = (n, um, varios) => `${n} ${n === 1 ? um : varios}`;
+function untilLabel(ms) {
+  const m = Math.max(0, Math.round(ms / 60000));
+  if (m < 1) return 'agora';
+  if (m < 60) return `em ${m} min`;
+  const h = Math.floor(m / 60), r = m % 60;
+  if (h < 24) return `em ${h}h${r ? ` ${r}min` : ''}`;
+  const d = Math.round(h / 24);
+  return d === 1 ? 'amanhã' : `em ${d} dias`;
+}
+function renderSummary() {
+  const its = visible().filter((x) => x.due && x.due.startsWith(S.sel));
+  const done = its.filter((x) => x.done).length, pend = its.length - done;
+  const now = Date.now();
+  const next = visible().filter((x) => !x.done && x.due && x.due.length > 10 && new Date(x.due).getTime() > now).sort(byDue)[0];
+  const today = S.sel === ymd(new Date());
+  $('#summary').innerHTML = `
+    <div class="sum-c g"><span class="ic">${ICON.check}</span><div><small>Concluídas ${today ? 'hoje' : 'no dia'}</small><b>${done}</b><em>${done === 1 ? 'tarefa' : 'tarefas'}</em></div></div>
+    <div class="sum-c b"><span class="ic">${ICON.doc}</span><div><small>Pendentes</small><b>${pend}</b><em>${pend === 1 ? 'tarefa' : 'tarefas'}</em></div></div>
+    ${next ? `<button class="sum-c y" data-open-id="${esc(next.id)}"><span class="ic">${ICON.clock}</span><div><small>Próximo</small><b>${esc(untilLabel(new Date(next.due) - now))}</b><em>${esc(next.title)}</em></div></button>`
+      : '<div class="sum-c y"><span class="ic">' + ICON.clock + '</span><div><small>Próximo</small><b>Nada agendado</b><em>Dia livre</em></div></div>'}`;
+}
+const DUR = [[0, 'Sem duração'], [15, '15 min'], [30, '30 min'], [45, '45 min'], [60, '1h'], [90, '1h30'], [120, '2h'], [180, '3h'], [240, '4h']];
+const durLabel = (m) => (!m ? '' : m < 60 ? `${m} min` : `${Math.floor(m / 60)}h${m % 60 ? String(m % 60).padStart(2, '0') : ''}`);
+function iconFor(it) {
+  if (it.kind === 'reuniao') return ICON.people2;
+  if (it.kind === 'lembrete') return ICON.bell;
+  const t = it.title.toLowerCase();
+  if (/ligar|telefon|retornar liga/.test(t)) return ICON.phone;
+  if (/estoque|caixa|entrega|pedido/.test(t)) return ICON.box;
+  if (/pagar|conta|boleto|banco/.test(t)) return ICON.money;
+  return ICON.task;
+}
+function tlHTML(it) {
+  const st = status(it);
+  const c = it.cat === 'empresa' ? 'c-e' : 'c-p';
+  const tm = timeOf(it.due);
+  const end = tm && it.duration_min ? (() => { const d = new Date(it.due); d.setMinutes(d.getMinutes() + it.duration_min); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; })() : '';
+  const place = it.place ? (/^https?:\/\//.test(it.place) ? 'Link da reunião' : it.place) : '';
+  const sub = [place || (it.notes || '').split('\n')[0], durLabel(it.duration_min)].filter(Boolean).join(' · ') || (it.kind === 'reuniao' ? `${it.members.length} participantes` : it.kind === 'lembrete' ? 'Lembrete' : 'Tarefa');
+  const last = it.history[it.history.length - 1];
+  const openReq = it.isOwner ? it.requests.filter((r) => r.status === 'aberto').length : 0;
+  const lateNote = it.notices.find((n) => Date.now() - new Date(n.created_at) < 3 * 3600_000);
+  let pill = '';
+  if (st === 'late') pill = '<span class="pill late">Atrasada</span>';
+  else if (openReq) pill = '<span class="pill inv">Pedido de mudança</span>';
+  else if (it.kind === 'reuniao' && !it.isOwner && it.rsvp === 'pendente') pill = last ? '<span class="pill soon">Novo horário: confirme</span>' : '<span class="pill inv">Convite: confirme</span>';
+  return `<div class="tl-row ${c} ${st || ''} ${it.done ? 'done' : ''}" data-tl="${esc(it.id)}">
+    <div class="tl-time"><b>${tm || 'Dia'}</b><small>${tm ? end : 'todo'}</small></div>
+    <span class="tl-dot"></span>
+    <div class="tl-card"><span class="tl-ico">${it.done ? ICON.check : iconFor(it)}</span>
+      <div class="body"><div class="t">${esc(it.title)}</div><div class="s2">${esc(sub)}${it.recurrence ? ' · ' + esc(recurrenceLabel(it.recurrence)) : ''}</div>
+        ${pill ? `<div style="margin-top:4px">${pill}</div>` : ''}
+        ${lateNote ? `<div class="notice">${esc(nameOf(lateNote.by))} vai se atrasar${lateNote.minutes ? ` ${lateNote.minutes} min` : ''}</div>` : ''}
+        ${last ? `<div class="resch">Reagendada: <s>${esc(isoLabel(last.from_at))}</s> → ${esc(isoLabel(last.to_at))} · ${esc(last.reason)}</div>` : ''}</div>
+      <span class="ctag">${it.cat === 'empresa' ? 'Empresa' : 'Pessoal'}</span>
+      <button class="more" aria-label="Abrir ${esc(it.title)}">${ICON.dots}</button></div></div>`;
+}
+function renderUpcoming() {
+  const its = visible().filter((x) => !x.done && x.due && x.due.slice(0, 10) > S.sel).sort(byDue).slice(0, 4);
+  const tm = new Date(); tm.setDate(tm.getDate() + 1);
+  const dayLbl = (due) => {
+    const k = due.slice(0, 10); const d = new Date(k + 'T12:00');
+    const base = k === ymd(tm) ? 'Amanhã' : `${DIAS_L[d.getDay()][0].toUpperCase() + DIAS_L[d.getDay()].slice(1)}, ${d.getDate()} de ${MESES_L[d.getMonth()]}`;
+    return timeOf(due) ? `${base}, ${timeOf(due)}` : base;
+  };
+  $('#upcoming').innerHTML = its.length ? its.map((x) => `<button class="up-row ${x.cat === 'empresa' ? 'c-e' : 'c-p'}" data-open-id="${esc(x.id)}">
+      <span class="tl-ico">${ICON.cal}</span><div class="body"><div class="t">${esc(x.title)}</div><div class="s2">${esc(dayLbl(x.due))} · ${x.cat === 'empresa' ? 'Empresa' : 'Pessoal'}</div></div><span class="chev">›</span></button>`).join('')
+    : '<div class="empty">Nada agendado para os próximos dias.</div>';
 }
 function itemHTML(it, showDay) {
   const st = status(it);
@@ -162,14 +235,15 @@ function itemHTML(it, showDay) {
     ${pill}<button class="more" aria-label="Abrir ${esc(it.title)}">${ICON.dots}</button></div>`;
 }
 function renderDay() {
-  const its = visible().filter((x) => x.due && x.due.startsWith(S.sel) && (S.filter === 'todas' || x.cat === S.filter)).sort(byDue);
-  $('#dayList').innerHTML = its.length ? its.map((x) => itemHTML(x, false)).join('')
-    : `<div class="empty"><div>${S.loaded ? 'Nada marcado para este dia' + (S.filter !== 'todas' ? ' em ' + (S.filter === 'pessoal' ? 'Pessoal' : 'Empresa') : '') + '.' : 'Carregando…'}</div>
-       ${S.loaded && !S.items.length ? '<div class="note">Crie sua primeira tarefa nos botões acima ou fale pelo microfone.</div>' : ''}</div>`;
+  const its = visible().filter((x) => x.due && x.due.startsWith(S.sel)).sort(byDue);
+  $('#dayList').innerHTML = its.length ? its.map(tlHTML).join('')
+    : `<div class="empty"><div>${S.loaded ? 'Nada marcado para este dia.' : 'Carregando…'}</div>
+       ${S.loaded && !S.items.length ? '<div class="note">Crie sua primeira tarefa nos botões abaixo ou toque no + e fale pelo microfone.</div>' : ''}</div>`;
 }
 function renderUndated() {
-  const its = visible().filter((x) => !x.due && (S.filter === 'todas' || x.cat === S.filter));
-  $('#undated').innerHTML = its.length ? `<div class="list">${its.map((x) => itemHTML(x, true)).join('')}</div>` : '<div class="note" style="font-size:14px">Nenhuma tarefa sem data.</div>';
+  const its = visible().filter((x) => !x.due);
+  $('#undatedWrap').hidden = !its.length;
+  $('#undated').innerHTML = its.length ? `<div class="list">${its.map((x) => itemHTML(x, true)).join('')}</div>` : '';
 }
 function renderAgenda() {
   const now = new Date(); const lim = new Date(); lim.setDate(lim.getDate() + 30);
@@ -262,14 +336,10 @@ function renderProfile() {
 /* ---------- permissões e grupos ---------- */
 function renderPerms() {
   const P = S.perms;
-  $$('[data-new="pessoal"],[data-new="empresa"]').forEach((b) => {
-    const ok = P[b.dataset.new];
-    b.disabled = !ok; b.classList.toggle('off', !ok);
-    b.lastChild.textContent = ok ? 'Criar tarefa' : 'Sem acesso';
-  });
   const any = P.pessoal || P.empresa;
-  $('#voiceBtn').hidden = !any;
-  $$('[data-new="reuniao"]').forEach((b) => { b.hidden = !any; });
+  $$('[data-new="tarefa"]').forEach((b) => { b.disabled = !any; b.classList.toggle('off', !any); b.lastChild.textContent = any ? 'Criar tarefa' : 'Sem acesso'; });
+  $$('[data-new="reuniao"]').forEach((b) => { b.disabled = !any; b.classList.toggle('off', !any); });
+  $('#fab').hidden = !any;
 }
 const PERMS = [['can_pessoal', 'Pessoal', 'p'], ['can_empresa', 'Empresa', 'e'], ['can_invite', 'Convites', 'y']];
 const gmName = (m) => {
@@ -476,6 +546,7 @@ function openForm(pre = {}) {
     <label class="f">O quê?<input class="inp" id="fTitle" required maxlength="140" placeholder="Ex.: Pagar a conta de luz" value="${esc(pre.title || '')}"></label>
     <div class="opts" id="fCat"><button type="button" class="opt p" data-c="pessoal" aria-pressed="${f.cat === 'pessoal'}" ${!P.pessoal && f.cat !== 'pessoal' ? 'disabled title="Sem acesso"' : ''}>Pessoal</button><button type="button" class="opt e" data-c="empresa" aria-pressed="${f.cat === 'empresa'}" ${!P.empresa && f.cat !== 'empresa' ? 'disabled title="Sem acesso"' : ''}>Empresa</button></div>
     <div class="row2"><label class="f">Dia<input class="inp" type="date" id="fDate" value="${date}"></label><label class="f">Horário<input class="inp" type="time" id="fTime" value="${timeOf(pre.due || '')}"></label></div>
+    <label class="f">Duração<select class="inp" id="fDur">${DUR.map(([v, l]) => `<option value="${v}" ${(pre.duration_min ?? (f.kind === 'reuniao' ? 60 : 0)) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
     <label class="f">Repetir<select class="inp" id="fRec">${RECURRENCE.map(([v, l]) => `<option value="${v}" ${(pre.recurrence || '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
     <div class="f"><span>Alertas</span><div class="chips" id="fAlerts">${alertChips(f.alerts)}</div></div>
     <div id="fMeet" class="detail-sec" ${f.kind === 'reuniao' ? '' : 'hidden'}>
@@ -493,7 +564,7 @@ function openForm(pre = {}) {
   };
   paint();
   const setCat = (c) => { f.cat = c; $$('#fCat .opt').forEach((b) => b.setAttribute('aria-pressed', b.dataset.c === c)); $('#fSave').style.setProperty('--c', c === 'empresa' ? 'var(--blue)' : 'var(--green)'); };
-  $('#fKind').onclick = (e) => { const k = e.target.dataset.k; if (!k) return; f.kind = k; $$('#fKind .opt').forEach((b) => b.setAttribute('aria-pressed', b.dataset.k === k)); $('#fMeet').hidden = k !== 'reuniao'; if (k === 'reuniao' && !pre.cat && P.empresa) setCat('empresa'); };
+  $('#fKind').onclick = (e) => { const k = e.target.dataset.k; if (!k) return; f.kind = k; $$('#fKind .opt').forEach((b) => b.setAttribute('aria-pressed', b.dataset.k === k)); $('#fMeet').hidden = k !== 'reuniao'; if (k === 'reuniao' && $('#fDur').value === '0') $('#fDur').value = '60'; if (k === 'reuniao' && !pre.cat && P.empresa) setCat('empresa'); };
   $('#fCat').onclick = (e) => { const c = e.target.dataset.c; if (c && !e.target.disabled) setCat(c); };
   $('#fAlerts').onclick = (e) => { const b = e.target.closest('[data-al]'); if (!b) return; const v = +b.dataset.al; f.alerts = f.alerts.includes(v) ? f.alerts.filter((x) => x !== v) : [...f.alerts, v].sort((a, c) => c - a); b.setAttribute('aria-pressed', f.alerts.includes(v)); };
   const addWho = () => {
@@ -519,7 +590,7 @@ function openForm(pre = {}) {
     if (rec && !d) { toast('Para repetir, escolha o dia da primeira vez'); return; }
     const { due_at, all_day } = fromLocal(d, tm);
     const row = {
-      kind: f.kind, cat: f.cat, title, notes: $('#fNotes').value.trim(), due_at, all_day, recurrence: rec,
+      kind: f.kind, cat: f.cat, title, notes: $('#fNotes').value.trim(), due_at, all_day, recurrence: rec, duration_min: tm && +$('#fDur').value ? +$('#fDur').value : null,
       alerts: JSON.stringify(f.alerts) === JSON.stringify(defAlerts()) ? null : f.alerts,
       place: f.kind === 'reuniao' ? $('#fPlace').value.trim() : '', agenda: f.kind === 'reuniao' ? $('#fAgenda').value.trim() : '',
     };
@@ -572,7 +643,7 @@ function openDetail(id) {
   const it = S.items.find((x) => x.id === id); if (!it) return;
   const meeting = it.kind === 'reuniao';
   sheet(esc(it.title), `
-    <div class="meta" style="font-size:14px"><span class="${it.cat === 'empresa' ? 'k-e' : 'k-p'}">${it.cat === 'empresa' ? 'Empresa' : 'Pessoal'}</span><span>·</span><span>${esc(whenLabel(it.due))}</span>${it.recurrence ? `<span class="rec-tag">${ICON.repeat}${esc(recurrenceLabel(it.recurrence))}</span>` : ''}</div>
+    <div class="meta" style="font-size:14px"><span class="${it.cat === 'empresa' ? 'k-e' : 'k-p'}">${it.cat === 'empresa' ? 'Empresa' : 'Pessoal'}</span><span>·</span><span>${esc(whenLabel(it.due))}</span>${it.duration_min ? `<span>·</span><span>${durLabel(it.duration_min)}</span>` : ''}${it.recurrence ? `<span class="rec-tag">${ICON.repeat}${esc(recurrenceLabel(it.recurrence))}</span>` : ''}</div>
     ${it.place ? `<div class="where" style="font-size:14px">Local: ${/^https?:\/\//.test(it.place) ? `<a href="${esc(it.place)}" target="_blank" rel="noopener">${esc(it.place)}</a>` : esc(it.place)}</div>` : ''}
     ${it.due && it.due.length > 10 ? `<div class="note">Alertas: ${alertsOf(it).map((a) => (ALERTAS.find((x) => x[0] === a) || [0, a + ' min antes'])[1]).join(', ') || 'nenhum'}</div>` : ''}
     ${it.notices.length ? `<div class="detail-sec">${it.notices.slice(0, 3).map((n) => `<div class="notice">${esc(nameOf(n.by))} vai se atrasar${n.minutes ? ` ${n.minutes} min` : ''}${n.message ? ': ' + esc(n.message) : ''}</div>`).join('')}</div>` : ''}
@@ -584,6 +655,7 @@ function openDetail(id) {
     ${it.notes ? `<div class="detail-sec"><h3>Observação</h3><div style="white-space:pre-line">${esc(it.notes)}</div></div>` : ''}
     ${it.history.length ? `<div class="detail-sec"><h3>Histórico de mudanças</h3><div class="hist">${histHTML(it)}</div></div>` : ''}
     <div class="actions">
+      ${it.my ? `<button class="btn" data-d="done" style="--c:var(--green);padding:9px 14px">${it.done ? 'Desmarcar concluída' : 'Concluir'}</button>` : ''}
       ${it.isOwner ? '<button class="ghost" data-d="edit">Editar</button><button class="ghost" data-d="resch">Reagendar</button>' : meeting ? '<button class="ghost" data-d="ask">Pedir novo horário</button>' : ''}
       ${meeting ? '<button class="ghost" data-d="late">Estou atrasado</button>' : ''}
       ${it.due && it.due.length > 10 && !it.done ? '<button class="ghost" data-d="snooze">Lembrar em 10 min</button>' : ''}
@@ -594,6 +666,7 @@ function openDetail(id) {
   $('#dMinSave') && ($('#dMinSave').onclick = safe(async () => { await api.updateItem(it.id, { minutes: $('#dMin').value.trim() }); toast('Ata salva'); await reload(); }));
   el.addEventListener('click', safe(async (e) => {
     const a = e.target.closest('[data-d]')?.dataset.d; if (!a) return;
+    if (a === 'done') { closeSheet(); await toggleDone(it); }
     if (a === 'edit') openForm(it);
     if (a === 'resch') reschedSheet(it, false);
     if (a === 'ask') reschedSheet(it, true);
@@ -602,6 +675,19 @@ function openDetail(id) {
     if (a === 'snooze') await snooze(it);
     if (a === 'del') confirmDelete(it);
   }));
+}
+async function toggleDone(it) {
+  if (!it.my) return;
+  if (!it.done && it.recurrence && it.due_at && it.isOwner) {
+    const next = nextOccurrence(it.due_at, it.recurrence);
+    await api.updateItem(it.id, { due_at: next });
+    await api.updateMember(it.my.id, { snooze_until: null });
+    toast(`Feito! Próxima: ${whenLabel(toLocal(next, it.all_day))}`);
+  } else {
+    await api.updateMember(it.my.id, { done: !it.done, snooze_until: null });
+    if (!it.done) toast('Concluída');
+  }
+  await reload();
 }
 function confirmDelete(it) {
   const meeting = it.kind === 'reuniao' && it.members.length > 1;
@@ -696,18 +782,39 @@ function startVoice() {
   if (!SR) return voiceSheet();
   try {
     rec = new SR(); rec.lang = 'pt-BR'; rec.interimResults = true; rec.maxAlternatives = 1;
-    const btn = $('#voiceBtn'); btn.classList.add('rec'); $('#voiceTxt').textContent = 'Ouvindo… fale sua tarefa';
+    sheet('Falar uma tarefa', `<div class="listen"><span class="mic">${ICON.mic}</span><b id="lsTxt">Ouvindo… fale sua tarefa</b><span class="note">Ex.: “reunião com João amanhã às 15h”</span><button type="button" class="ghost" id="lsStop">Concluir</button></div>`);
+    $('#lsStop').onclick = () => { try { rec?.stop(); } catch { /* ignora */ } };
     let final = '', failed = false, heard = false;
     const guard = setTimeout(() => { if (!heard) { failed = true; try { rec?.abort(); } catch { /* ignora */ } rec?.onend?.(); } }, 7000);
-    rec.onresult = (e) => { heard = true; let s = ''; for (const r of e.results) s += r[0].transcript; final = s; $('#voiceTxt').textContent = s; };
+    rec.onresult = (e) => { heard = true; let s = ''; for (const r of e.results) s += r[0].transcript; final = s; const el = $('#lsTxt'); if (el) el.textContent = s; };
     rec.onerror = () => { failed = true; };
     rec.onend = () => {
       clearTimeout(guard); if (!rec) return; rec = null;
-      btn.classList.remove('rec'); $('#voiceTxt').textContent = 'Toque para falar uma tarefa';
+      closeSheet();
       if (final.trim()) openForm(parseFala(final)); else if (failed) voiceSheet();
     };
     rec.start();
   } catch { voiceSheet(); }
+}
+function plusMenu() {
+  const P = S.perms;
+  const el = sheet('Criar', `<div class="plus">
+    <button type="button" data-m="tarefa"><span class="tl-ico c-p">${ICON.task}</span><span>Nova tarefa<span class="d">Pessoal ou Empresa</span></span></button>
+    <button type="button" data-m="reuniao"><span class="tl-ico c-e">${ICON.people2}</span><span>Nova reunião<span class="d">Com convidados e alertas para todos</span></span></button>
+    <button type="button" data-m="lembrete"><span class="tl-ico c-p">${ICON.bell}</span><span>Novo lembrete</span></button>
+    <button type="button" data-m="voz"><span class="tl-ico" style="--cs:var(--yellow-soft);--c:var(--yellow-ink)">${ICON.mic}</span><span>Falar uma tarefa<span class="d">Diga o que, quando e com quem</span></span></button>
+    <button type="button" data-m="resumo"><span class="tl-ico" style="--cs:var(--yellow-soft);--c:var(--yellow-ink)">${ICON.play}</span><span>Ouvir resumo do dia</span></button>
+  </div>`);
+  if (!P.pessoal && !P.empresa) $$('[data-m="tarefa"],[data-m="reuniao"],[data-m="lembrete"],[data-m="voz"]', el).forEach((b) => { b.hidden = true; });
+  el.onclick = (e) => {
+    const m = e.target.closest('[data-m]')?.dataset.m; if (!m) return;
+    closeSheet();
+    if (m === 'tarefa') openForm({});
+    if (m === 'reuniao') openForm({ kind: 'reuniao', cat: 'empresa' });
+    if (m === 'lembrete') openForm({ kind: 'lembrete' });
+    if (m === 'voz') startVoice();
+    if (m === 'resumo') briefSheet();
+  };
 }
 function voiceSheet() {
   const el = sheet('Falar uma tarefa', `
@@ -753,6 +860,7 @@ export function buildBrief(dayKey) {
   return L.join('\n');
 }
 function renderBrief() {
+  if (!$('#brief')) return;
   $('#briefTxt').textContent = buildBrief(S.sel);
   const n = visible().filter((x) => !x.done && x.due && x.due.startsWith(S.sel)).length;
   if (!$('#brief').classList.contains('playing')) $('#briefSub').textContent = n ? `${n} ${n === 1 ? 'item' : 'itens'} ${S.sel === ymd(new Date()) ? 'hoje' : 'neste dia'} · toque para ouvir` : 'Dia livre · toque para ouvir';
@@ -818,12 +926,13 @@ document.addEventListener('click', safe(async (e) => {
   const t = e.target;
   if (t.closest('#groupsCard') && await groupClick(t)) return;
   const day = t.closest('[data-day]'); if (day) { S.sel = day.dataset.day; render(); return; }
-  const nw = t.closest('[data-new]'); if (nw) { const k = nw.dataset.new; openForm(k === 'reuniao' ? { kind: 'reuniao', cat: 'empresa' } : { cat: k }); return; }
-  const fl = t.closest('[data-filter]'); if (fl) { S.filter = fl.dataset.filter; $$('#seg button').forEach((b) => b.setAttribute('aria-pressed', b.dataset.f === S.filter)); render(); $('#seg').scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+  const nw = t.closest('[data-new]'); if (nw) { const k = nw.dataset.new; openForm(k === 'reuniao' ? { kind: 'reuniao', cat: 'empresa' } : k === 'tarefa' ? {} : { cat: k }); return; }
   const sg = t.closest('#seg [data-f]'); if (sg) { S.filter = sg.dataset.f; $$('#seg button').forEach((b) => b.setAttribute('aria-pressed', b === sg)); render(); return; }
   const sg2 = t.closest('#seg2 [data-f]'); if (sg2) { S.filter2 = sg2.dataset.f; $$('#seg2 button').forEach((b) => b.setAttribute('aria-pressed', b === sg2)); render(); return; }
   const g = t.closest('[data-go]'); if (g) { go(g.dataset.go); return; }
-  if (t.closest('#voiceBtn')) { if (rec) { rec.stop(); return; } startVoice(); return; }
+  if (t.closest('#fab')) { plusMenu(); return; }
+  const tl = t.closest('[data-tl]'); if (tl) { openDetail(tl.dataset.tl); return; }
+  const oi = t.closest('[data-open-id]'); if (oi) { openDetail(oi.dataset.openId); return; }
   if (t.closest('#playBrief')) { playBriefCard(); return; }
   if (t.closest('#toggleBrief')) { const tx = $('#briefTxt'); tx.hidden = !tx.hidden; t.closest('#toggleBrief').textContent = tx.hidden ? 'Ler' : 'Fechar'; return; }
   if (t.closest('#installBtn')) { S.installEvt?.prompt(); S.installEvt = null; renderBanners(); return; }
@@ -858,19 +967,7 @@ document.addEventListener('click', safe(async (e) => {
   const row = t.closest('.item');
   if (row) {
     const it = S.items.find((x) => x.id === row.dataset.id); if (!it) return;
-    if (t.closest('.chk')) {
-      if (!it.my) return;
-      if (!it.done && it.recurrence && it.due_at && it.isOwner) {
-        const next = nextOccurrence(it.due_at, it.recurrence);
-        await api.updateItem(it.id, { due_at: next });
-        await api.updateMember(it.my.id, { snooze_until: null });
-        toast(`Feito! Próxima: ${whenLabel(toLocal(next, it.all_day))}`);
-      } else {
-        await api.updateMember(it.my.id, { done: !it.done, snooze_until: null });
-        if (!it.done) toast('Concluída');
-      }
-      await reload(); return;
-    }
+    if (t.closest('.chk')) { await toggleDone(it); return; }
     openDetail(it.id); return;
   }
   const ic = t.closest('.inv-card');
